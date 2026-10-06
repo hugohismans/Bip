@@ -58,7 +58,12 @@ const DEFAULT_SETTINGS = {
   reportName: '',
 };
 
-/* Signes avant-coureurs fréquents, proposés comme point de départ */
+/* Trois familles de signes : annonciateurs de phase haute, de phase basse, et signes de stabilité */
+const POLE_ICON = { high: '↑', low: '↓', mid: '=' };
+const POLE_NAME = { high: 'haute', low: 'basse', mid: 'stable' };
+const poleTag = p => `${POLE_ICON[p]} ${POLE_NAME[p]}`;
+
+/* Signes avant-coureurs fréquents (et signes de stabilité), proposés comme point de départ */
 const SUGGESTED_SIGNS = [
   ['high', 'Je dors moins sans être fatigué·e'], ['high', 'Je fais plein de projets ou de listes'],
   ['high', 'Je dépense plus que d\'habitude'], ['high', 'Je parle plus vite ou plus fort'],
@@ -67,6 +72,10 @@ const SUGGESTED_SIGNS = [
   ['low', 'Je m\'isole, j\'annule des sorties'], ['low', 'Je reste au lit plus longtemps'],
   ['low', 'Je perds l\'intérêt pour ce que j\'aime'], ['low', 'Je néglige les repas ou la toilette'],
   ['low', 'Je ressasse, je culpabilise'], ['low', 'Tout me demande un effort énorme'],
+  ['mid', 'Je me réveille reposé·e'], ['mid', 'Je finis ce que je commence'],
+  ['mid', 'Je vois mes proches avec plaisir, sans excès'], ['mid', 'Je me concentre normalement'],
+  ['mid', 'Mes dépenses sont habituelles'], ['mid', 'Je profite des choses simples'],
+  ['mid', 'Je garde mes horaires (lever, repas, coucher)'], ['mid', 'Mes proches me trouvent « comme d\'habitude »'],
 ];
 
 const MOOD_LABELS = { '-3': 'très basse', '-2': 'basse', '-1': 'un peu basse', '0': 'neutre', '1': 'un peu haute', '2': 'haute', '3': 'très haute' };
@@ -105,7 +114,7 @@ function normSettings(o) {
   if (!times['1j'] && /^\d{2}:\d{2}$/.test(st.remindTime || '') && st.remindTime !== '21:00') times['1j'] = st.remindTime; // ancien réglage
   st.slotTimes = times;
   st.signs = (Array.isArray(st.signs) ? st.signs : [])
-    .filter(x => x && typeof x.id === 'string' && typeof x.text === 'string' && (x.pole === 'high' || x.pole === 'low'))
+    .filter(x => x && typeof x.id === 'string' && typeof x.text === 'string' && POLE_ICON[x.pole])
     .map(x => ({ id: x.id.slice(0, 40), text: x.text.slice(0, 80), pole: x.pole, archived: !!x.archived }));
   st.planHigh = typeof st.planHigh === 'string' ? st.planHigh.slice(0, 1000) : '';
   st.planLow = typeof st.planLow === 'string' ? st.planLow.slice(0, 1000) : '';
@@ -410,7 +419,8 @@ function analyze() {
   const lastE = entries[last];
   const lowest = lastE.slots ? Math.min(...Object.values(lastE.slots).map(r => r.mood)) : lastE.mood;
   const crisis = stale <= 1 && (lowest <= -3 || alerts.some(a => a.title === 'Signes mixtes'));
-  return { last, stale, avg, n7: w7.n, slope, phase: phaseOf(avg), dir: directionOf(slope), alerts, crisis };
+  const stable = stale <= 2 ? signStats(lastNDays(last, 3), 'mid').distinct : new Set();
+  return { last, stale, avg, n7: w7.n, slope, stable, phase: phaseOf(avg), dir: directionOf(slope), alerts, crisis };
 }
 
 /* ---------- UI : onglets ---------- */
@@ -475,7 +485,7 @@ function renderSignInputs() {
   }
   box.innerHTML = `<div class="sym-head"><span class="sym-label">Mes signes aujourd'hui</span><span class="sym-val">touchez ceux qui sont là</span></div>
     <div class="sign-chips">${list.map(x => `<button type="button" class="sign-chip ${x.pole}" data-sign="${x.id}" aria-pressed="false">
-      <span class="pole" aria-label="${x.pole === 'high' ? 'phase haute' : 'phase basse'}">${x.pole === 'high' ? '↑' : '↓'}</span>${esc(x.text)}</button>`).join('')}</div>`;
+      <span class="pole" aria-label="${x.pole === 'mid' ? 'stabilité' : 'phase ' + POLE_NAME[x.pole]}">${POLE_ICON[x.pole]}</span>${esc(x.text)}</button>`).join('')}</div>`;
   paintSigns();
 }
 function paintSigns() { $$('[data-sign]').forEach(b => b.setAttribute('aria-pressed', String(signVals.has(b.dataset.sign)))); }
@@ -634,7 +644,8 @@ function renderStatus() {
       <div class="stat"><div class="label">Direction</div>
         <div class="value">${a.dir.label}</div><div class="sub">${a.dir.sub}</div></div>
     </div>
-    <p class="muted small" style="margin:10px 0 0">Dernier relevé : ${staleTxt}.</p>`;
+    <p class="muted small" style="margin:10px 0 0">Dernier relevé : ${staleTxt}.</p>
+    ${a.stable.size ? `<p class="small stable-note">= Signes de stabilité ces derniers jours : ${[...a.stable].map(esc).join(' · ')}</p>` : ''}`;
 
   if (a.stale > 1) {
     alertsEl.innerHTML = `<div class="card alert"><h3>Quelques jours sans relevé</h3><p>Pas de saisie depuis ${a.stale} jours. Vous pouvez compléter les jours manqués en changeant la date en haut. Interrompre le suivi arrive souvent quand l'humeur change : ça vaut le coup de vous poser la question.</p></div>`;
@@ -713,7 +724,7 @@ function slotsSummary(e) {
   return 'humeur ' + SLOT_ORDER.filter(id => e.slots[id]).map(id => `${SLOT_LABEL[id]} ${fmtNum(e.slots[id].mood, 0).replace('+0', '0')}`).join(' · ');
 }
 const fmtV = v => (Number.isInteger(v) ? String(v) : v.toFixed(1).replace('.', ','));
-function signsSummary(e) { return (e.signs || []).map(signById).filter(Boolean).map(g => (g.pole === 'high' ? '↑ ' : '↓ ') + esc(g.text)).join(' · '); }
+function signsSummary(e) { return (e.signs || []).map(signById).filter(Boolean).map(g => POLE_ICON[g.pole] + ' ' + esc(g.text)).join(' · '); }
 function symSummary(e) {
   return SYMPTOMS.filter(x => sv(e, x.key) > 0).map(x => symLabel(x.key, e[x.key])).join(' · ');
 }
@@ -724,7 +735,7 @@ function heatRows(days) {
   const rows = SYMPTOMS.filter(x => settings.symptoms.includes(x.key) || days.some(d => entries[d] && entries[d][x.key] !== undefined))
     .map(x => ({ label: x.label, val: e => (e[x.key] === undefined ? null : e[x.key]), tip: e => (e[x.key] === undefined ? '—' : lvl(e[x.key])) }));
   const usedSign = pole => days.some(d => entries[d] && (entries[d].signs || []).some(id => { const g = signById(id); return g && g.pole === pole; }));
-  for (const [pole, label] of [['high', 'Mes signes ↑'], ['low', 'Mes signes ↓']]) {
+  for (const [pole, label] of [['high', 'Mes signes ↑'], ['low', 'Mes signes ↓'], ['mid', 'Mes signes =']]) {
     if (!settings.signs.some(x => x.pole === pole && !x.archived) && !usedSign(pole)) continue;
     const ids = e => (e.signs || []).map(signById).filter(g => g && g.pole === pole);
     rows.push({ label, val: e => Math.min(3, ids(e).length), tip: e => ids(e).map(g => esc(g.text)).join(', ') || 'aucun' });
@@ -912,7 +923,7 @@ function renderTable() {
 }
 function signCounts(e) {
   const out = [];
-  for (const [pole, arrow] of [['high', '↑'], ['low', '↓']]) {
+  for (const [pole, arrow] of Object.entries(POLE_ICON)) {
     const n = (e.signs || []).map(signById).filter(g => g && g.pole === pole).length;
     if (n) out.push(`signes ${arrow}${n}`);
   }
@@ -1161,7 +1172,7 @@ function renderReport() {
       <td>${v.filter(e => symHigh(e, x.key)).length}</td><td>${avg(v.map(e => e[x.key])).toFixed(1).replace('.', ',')}</td></tr>`;
   }).join('');
   const signRows = settings.signs.map(g => ({ g, n: es.filter(e => (e.signs || []).includes(g.id)).length })).filter(r => r.n)
-    .sort((a, b) => b.n - a.n).map(r => `<tr><td>${r.g.pole === 'high' ? '↑ haute' : '↓ basse'}</td><td>${esc(r.g.text)}</td><td>${r.n}</td></tr>`).join('');
+    .sort((a, b) => b.n - a.n).map(r => `<tr><td>${poleTag(r.g.pole)}</td><td>${esc(r.g.text)}</td><td>${r.n}</td></tr>`).join('');
   const notes = list.filter(d => entries[d].note).map(d => `<li><b>${fmtShort(d)}</b> ${esc(entries[d].note)}</li>`).join('');
   const a = to === today() ? analyze() : null;
   const cal = calibration();
@@ -1294,12 +1305,12 @@ function addSign(text, pole) {
 function renderSignsCard() {
   const list = activeSigns();
   $('#signs-list').innerHTML = list.length ? list.map(x => `
-    <li><span class="sign-pole ${x.pole}">${x.pole === 'high' ? '↑ haute' : '↓ basse'}</span><span class="sign-text">${esc(x.text)}</span>
+    <li><span class="sign-pole ${x.pole}">${poleTag(x.pole)}</span><span class="sign-text">${esc(x.text)}</span>
       <button type="button" class="x" data-del-sign="${x.id}" aria-label="Retirer">✕</button></li>`).join('')
     : '<li class="muted small">Aucun signe pour l\'instant. Choisissez dans les suggestions ou écrivez les vôtres.</li>';
   const have = new Set(list.map(x => x.pole + x.text.toLowerCase()));
   $('#signs-suggest').innerHTML = SUGGESTED_SIGNS.filter(([p, t]) => !have.has(p + t.toLowerCase()))
-    .map(([p, t]) => `<button type="button" class="suggest ${p}" data-add-sign="${p}">${p === 'high' ? '↑' : '↓'} ${esc(t)}</button>`).join('');
+    .map(([p, t]) => `<button type="button" class="suggest ${p}" data-add-sign="${p}">${POLE_ICON[p]} ${esc(t)}</button>`).join('');
   $('#s-plan-high').value = settings.planHigh; $('#s-plan-low').value = settings.planLow;
 }
 $('#signs-card').addEventListener('click', ev => {
@@ -1310,7 +1321,7 @@ $('#signs-card').addEventListener('click', ev => {
     saveSettings(); renderSignsCard(); renderSignInputs();
   }
   const sug = ev.target.closest('[data-add-sign]');
-  if (sug) addSign(sug.textContent.replace(/^[↑↓]\s*/, ''), sug.dataset.addSign);
+  if (sug) addSign(sug.textContent.replace(/^[↑↓=]\s*/, ''), sug.dataset.addSign);
 });
 $('#sign-add').addEventListener('submit', ev => {
   ev.preventDefault();
@@ -1382,11 +1393,11 @@ $('#d-export').addEventListener('click', exportBackup);
 document.addEventListener('click', ev => { if (ev.target.closest('[data-backup]')) exportBackup(); });
 
 $('#d-csv').addEventListener('click', () => {
-  const rows = [['date', 'humeur', 'energie', 'sommeil_h', ...SYMPTOMS.map(x => x.key), 'signes_haute', 'signes_basse', 'traitement_pris', 'traitement', 'indice', 'moyenne_7j', 'note']];
+  const rows = [['date', 'humeur', 'energie', 'sommeil_h', ...SYMPTOMS.map(x => x.key), 'signes_haute', 'signes_basse', 'signes_stable', 'traitement_pris', 'traitement', 'indice', 'moyenne_7j', 'note']];
   for (const d of Object.keys(entries).sort()) {
     const e = entries[d], w = avgWindow(d, 7);
     rows.push([d, e.mood, e.energy, e.sleep, ...SYMPTOMS.map(x => e[x.key] === undefined ? '' : e[x.key]),
-      ...['high', 'low'].map(p => (e.signs || []).map(signById).filter(g => g && g.pole === p).map(g => g.text).join(' / ')), e.missed ? 'non' : 'oui', treatmentOn(d) ? treatText(treatmentOn(d)) : '', dayIndex(e), w.n >= 3 ? w.avg.toFixed(2) : '', e.note || '']);
+      ...['high', 'low', 'mid'].map(p => (e.signs || []).map(signById).filter(g => g && g.pole === p).map(g => g.text).join(' / ')), e.missed ? 'non' : 'oui', treatmentOn(d) ? treatText(treatmentOn(d)) : '', dayIndex(e), w.n >= 3 ? w.avg.toFixed(2) : '', e.note || '']);
   }
   const csv = rows.map(r => r.map(c => /[",;\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : c).join(';')).join('\n');
   saveFile(`alcyon-humeur-${today()}.csv`, '﻿' + csv, 'text/csv');
@@ -1497,7 +1508,7 @@ function demoYear() {
     { from: 75, to: 66, mood: 0.8, energy: 1, sleep: -1, thoughts: 1, stress: 2 },
     { from: 9, to: -6, mood: 2.6, energy: 2.8, sleep: -3.2, thoughts: 3, impuls: 2.6, irrit: 1.6 },
   ];
-  const sgn = { high: ['dh1', 'dh2', 'dh3'], low: ['dl1', 'dl2', 'dl3'] };
+  const sgn = { high: ['dh1', 'dh2', 'dh3'], low: ['dl1', 'dl2', 'dl3'], mid: ['dm1', 'dm2'] };
   const NOTES = { 320: 'Fatigue, envie de rien', 300: 'Reprise du sport', 229: 'Nuit blanche à coder, super idée', 226: 'Gros achat en ligne',
     165: 'Tendu, dispute avec la famille', 140: 'Arrêt de travail', 112: 'Ça va mieux', 72: 'Déménagement', 40: 'Vacances',
     5: 'Plein de projets en tête', 2: 'Dormi 4 h, en pleine forme', 1: 'Proche trouve que je parle vite' };
@@ -1529,6 +1540,7 @@ function demoYear() {
     const signs = [];
     for (const id of sgn.high) if (lvl.mood + lvl.energy > 1.6 && rnd() < 0.55) signs.push(id);
     for (const id of sgn.low) if (lvl.mood < -0.9 && rnd() < 0.5) signs.push(id);
+    for (const id of sgn.mid) if (Math.abs(lvl.mood) < 0.3 && Math.abs(lvl.energy) < 0.3 && rnd() < 0.45) signs.push(id);
     if (signs.length) out[d].signs = signs;
     if (rnd() < (inLow ? 0.15 : 0.03)) out[d].missed = true;
     // 6 dernières semaines : 3 relevés par jour, avec des journées plus chahutées pendant l'hypomanie
@@ -1657,6 +1669,8 @@ if (DEMO) {
     { id: 'dl1', text: 'Je m\'isole, j\'annule des sorties', pole: 'low' },
     { id: 'dl2', text: 'Je reste au lit plus longtemps', pole: 'low' },
     { id: 'dl3', text: 'Je néglige les repas ou la toilette', pole: 'low' },
+    { id: 'dm1', text: 'Je me réveille reposé·e', pole: 'mid' },
+    { id: 'dm2', text: 'Je finis ce que je commence', pole: 'mid' },
   ];
   settings.planHigh = 'Coucher 23 h sans écran. Pas d\'achat de plus de 50 € avant 48 h. J\'appelle le Dr Martin et je préviens Léa.';
   settings.planLow = 'Lever 8 h quoi qu\'il arrive, 20 min de marche dehors, un appel à un proche par jour. Rendez-vous avec le Dr Martin.';

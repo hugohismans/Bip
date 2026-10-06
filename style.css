@@ -339,3 +339,11 @@ table.impact thead th { color: var(--muted); font-weight: 500; }
 table.impact tbody th { font-weight: 500; color: var(--text-2); white-space: normal; }
 .better, .worse { font-size: 11px; font-weight: 600; border-radius: 99px; padding: 1px 6px; margin-left: 4px; border: 1px solid var(--border); color: var(--text-2); }
 .better::before { content: '✓ '; }
+
+/* Signes de stabilité */
+:root { --mid: #0a7d0a; --mid-zone: #e5f4e3; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --mid: #4cc24c; --mid-zone: #1c2f1b; } }
+:root[data-theme="dark"] { --mid: #4cc24c; --mid-zone: #1c2f1b; }
+.sign-pole.mid { color: var(--mid); background: var(--mid-zone); }
+.sign-chip.mid .pole { color: var(--mid); }
+.stable-note { margin: 8px 0 0; color: var(--mid); }
