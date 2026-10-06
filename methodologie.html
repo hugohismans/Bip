@@ -71,6 +71,18 @@ li { margin: 4px 0; }
 .q li { counter-increment: q; position: relative; padding: 10px 12px 10px 44px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin: 8px 0; }
 .q li::before { content: counter(q); position: absolute; left: 12px; top: 10px; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--surface); font-size: 13px; font-weight: 700; text-align: center; line-height: 22px; }
 .refs li { margin: 8px 0; font-size: 15px; }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 12px 0; padding: 0; list-style: none; counter-reset: st; }
+.steps li { counter-increment: st; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin: 0; font-size: 14px; }
+.steps li::before { content: counter(st); display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--surface); font-weight: 700; font-size: 13px; text-align: center; line-height: 22px; margin-right: 6px; }
+.steps b { font-size: 15px; }
+.shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 18px; margin: 14px 0; align-items: start; }
+.shots.wide { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+figure { margin: 0; }
+figure img { display: block; width: 100%; height: auto; border-radius: 14px; border: 1px solid var(--border); box-shadow: 0 6px 20px rgba(0,0,0,.08); background: #fcfcfb; }
+figure.tall img { max-height: 620px; object-fit: cover; object-position: top; }
+figcaption { font-size: 13.5px; color: var(--text-2); margin-top: 8px; line-height: 1.45; }
+figcaption b { color: var(--text); }
+.note-demo { font-size: 13px; color: var(--muted); }
 footer { margin-top: 48px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
 .back { font-size: 14px; }
 @media print {
@@ -81,7 +93,12 @@ footer { margin-top: 48px; padding-top: 12px; border-top: 1px solid var(--border
   main { max-width: none; padding: 0; }
   .back { display: none; }
   h2 { break-after: avoid; }
-  .card, tr, .q li { break-inside: avoid; }
+  .card, tr, .q li, figure, .steps li { break-inside: avoid; }
+  .steps { grid-template-columns: repeat(4, 1fr); }
+  .shots { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .shots.wide { grid-template-columns: repeat(2, 1fr); }
+  figure img { box-shadow: none; }
+  figure.tall img { max-height: 120mm; }
   a { color: inherit; text-decoration: none; }
   .refs a::after { content: " — " attr(href); font-size: 9pt; color: #555; word-break: break-all; }
   @page { margin: 16mm; }
@@ -95,9 +112,52 @@ footer { margin-top: 48px; padding-top: 12px; border-top: 1px solid var(--border
 <header class="doc">
   <div class="kicker">ALCYON · DOCUMENT DE MÉTHODE</div>
   <h1>Sur quoi s'appuient les calculs d'Alcyon</h1>
-  <p class="lede">Ce document décrit précisément ce que l'application demande au patient, comment elle en tire un indice, des phases et des alertes, sur quelles sources elle s'appuie, et où se trouvent des choix qui restent à valider. Il est destiné à une relecture par un·e psychiatre.</p>
+  <p class="lede">Ce document présente l'application, puis décrit précisément ce que l'application demande au patient, comment elle en tire un indice, des phases et des alertes, sur quelles sources elle s'appuie, et où se trouvent des choix qui restent à valider. Il est destiné à une relecture par un·e psychiatre.</p>
   <p class="small muted">Version du 6 octobre 2026. Les valeurs ci-dessous sont celles du code de l'application à cette date (fichier <code>app.js</code>).</p>
 </header>
+
+<!-- ================================================================ -->
+<section id="bref">
+<h2 style="margin-top:24px">L'application en bref</h2>
+<p><b>Alcyon</b> est une application pour téléphone qui aide une personne vivant avec un trouble bipolaire à <b>suivre son humeur au jour le jour</b>, à voir sur quelques semaines ou quelques mois si elle est plutôt en train de monter, de descendre, en phase haute ou en phase basse, et à savoir <b>quand il serait utile de contacter son psychiatre ou un proche</b>. Elle vise surtout le <b>type II</b>, où l'hypomanie est souvent agréable et passe inaperçue pour la personne elle-même.</p>
+<p>Elle s'installe depuis le navigateur comme une application (iPhone et Android), fonctionne hors connexion, et <b>garde toutes les données sur le téléphone</b> : pas de compte, pas de serveur.</p>
+
+<h3>Au quotidien</h3>
+<ol class="steps">
+  <li><b>Noter</b><br>Le soir (ou 2 à 3 fois par jour), quelques curseurs : humeur, énergie, sommeil, 2 ou 3 symptômes, et ses signes personnels. Environ 5 à 10 secondes.</li>
+  <li><b>Voir où on en est</b><br>L'app affiche la phase des 7 derniers jours et la direction (montée, descente, stable).</li>
+  <li><b>Être prévenu</b><br>Si un schéma inquiétant apparaît (sommeil qui diminue, plusieurs jours en zone haute…), une alerte s'affiche avec son plan d'action et les numéros utiles.</li>
+  <li><b>En parler en consultation</b><br>Un récapitulatif imprimable résume la période depuis le dernier rendez-vous.</li>
+</ol>
+
+<h3>Visite guidée</h3>
+<p class="note-demo">Captures réalisées avec le mode démonstration de l'application : un an de <b>données entièrement fictives</b> (un profil de type II avec deux épisodes dépressifs, deux hypomanies, un épisode mixte et une hypomanie qui débute).</p>
+
+<div class="shots">
+  <figure class="tall"><img src="docs/01-saisie.jpg" alt="Écran de saisie : humeur, énergie, sommeil, symptômes et signes personnels" width="1074" height="3636" loading="lazy">
+    <figcaption><b>La saisie.</b> Humeur et énergie de −3 à +3, heures de sommeil, symptômes de 0 à 3, signes personnels à cocher (↑ phase haute, ↓ phase basse, = stabilité). Ici, 3 relevés par jour (matinée, après-midi, soirée). Voir <a href="#saisie">§ 2</a> et <a href="#multi">§ 4</a>.</figcaption></figure>
+  <figure><img src="docs/02-alertes.jpg" alt="Phase et direction sur 7 jours" width="1074" height="405" loading="lazy">
+    <figcaption><b>Phase et direction</b> sur les 7 derniers jours, juste sous la saisie. Voir <a href="#phase">§ 5</a>.</figcaption>
+    <img src="docs/03b-alerte.jpg" alt="Exemple d'alerte" width="1074" height="567" loading="lazy" style="margin-top:12px">
+    <figcaption><b>Une alerte</b> : condition atteinte, explication en langage simple. Voir <a href="#alertes">§ 6</a>.</figcaption>
+    <img src="docs/03-que-faire.jpg" alt="Carte Que faire avec le plan d'action" width="1074" height="786" loading="lazy" style="margin-top:12px">
+    <figcaption><b>« Que faire »</b> : le plan d'action écrit avec le psychiatre et les boutons d'appel. Voir <a href="#signes">§ 8</a>.</figcaption></figure>
+  <figure><img src="docs/04-annee.jpg" alt="Graphe de l'indice d'humeur sur un an" width="1074" height="1284" loading="lazy">
+    <figcaption><b>Un an d'historique.</b> Points : indice du jour ; trait noir : moyenne sur 7 jours ; bandes rouge et bleue : zones haute et basse ; 💊 : changements de traitement. Voir <a href="#indice">§ 3</a>.</figcaption>
+    <img src="docs/05-mois.jpg" alt="Graphe de l'indice d'humeur sur 30 jours" width="1074" height="1218" loading="lazy" style="margin-top:12px">
+    <figcaption><b>Les 30 derniers jours.</b> Les traits verticaux gris montrent l'écart entre les relevés d'une même journée. Voir <a href="#multi">§ 4</a>.</figcaption></figure>
+</div>
+<div class="shots wide">
+  <figure><img src="docs/06-symptomes.jpg" alt="Carte de chaleur des symptômes et signes sur 3 mois" width="1074" height="951" loading="lazy">
+    <figcaption><b>Symptômes et signes</b> jour par jour (plus foncé = plus intense) : on voit ce qui accompagne chaque phase.</figcaption></figure>
+  <figure><img src="docs/07-traitement.jpg" alt="Comparaison avant / après un changement de traitement" width="972" height="906" loading="lazy">
+    <figcaption><b>Changement de traitement</b> : comparaison descriptive des 28 jours avant et après. Voir <a href="#traitement">§ 9</a> pour les limites.</figcaption></figure>
+  <figure class="tall"><img src="docs/08-recap.jpg" alt="Début du récapitulatif de consultation" width="1074" height="2280" loading="lazy">
+    <figcaption><b>Le récapitulatif de consultation</b>, imprimable ou en PDF : chiffres clés, phases repérées, graphes, symptômes, traitement, notes. Voir <a href="#recap">§ 10</a>.</figcaption></figure>
+  <figure class="tall"><img src="docs/10-etalonnage.jpg" alt="Écran Ma façon de noter" width="1074" height="3429" loading="lazy">
+    <figcaption><b>« Ma façon de noter »</b> : ce que l'app a appris des habitudes de notation de la personne, et comment elle en tient compte. Voir <a href="#etalonnage">§ 7</a>.</figcaption></figure>
+</div>
+</section>
 
 <div class="card">
   <p class="small" style="margin-top:0"><b>Comment lire ce document.</b> Chaque élément porte une étiquette :</p>
@@ -110,6 +170,7 @@ footer { margin-top: 48px; padding-top: 12px; border-top: 1px solid var(--border
 
 <nav class="toc card" aria-label="Sommaire">
   <b class="small">Sommaire</b>
+  <p class="small" style="margin:4px 0 0"><a href="#bref">L'application en bref (avec captures d'écran)</a></p>
   <ol>
     <li><a href="#objet">Objet et périmètre</a></li>
     <li><a href="#saisie">Ce que le patient note</a></li>
