@@ -89,6 +89,12 @@ Impression / PDF (toujours en clair) ou fichier .html à envoyer.
 - Si l'humeur est notée à −3 ou en cas de signes mixtes : numéros d'écoute
   (3114 FR, 0800 32 123 BE, 143 CH, 988 CA, 112).
 
+## Méthodologie détaillée
+
+[`methodologie.html`](methodologie.html) décrit chaque calcul (formules, seuils exacts), distingue ce qui
+vient de la littérature de ce qui est un choix de conception à valider, liste les limites et pose
+des questions précises pour une relecture par un·e psychiatre. Accessible depuis *Réglages*.
+
 ## Sources
 
 - NIMH Life Chart Method – relevé quotidien de la polarité et de la sévérité de l'humeur

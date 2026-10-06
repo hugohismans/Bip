@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'none'; connect-src 'none'; base-uri 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Alcyon – Méthodologie</title>
+<meta name="description" content="Sur quoi s'appuient les calculs d'Alcyon : échelles, indice, alertes, étalonnage, sources, limites et questions pour une relecture clinique.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f3f0; --surface: #fcfcfb; --border: #e3e2dd; --grid: #ecebe7;
+  --text: #0b0b0b; --text-2: #52514e; --muted: #73726c;
+  --lit: #0a7d0a; --lit-bg: #e5f4e3;
+  --adapt: #2a78d6; --adapt-bg: #e6effb;
+  --choice: #9a5b00; --choice-bg: #fff3dc;
+  --accent: #0f4c5c;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #111110; --surface: #1a1a19; --border: #2e2e2c; --grid: #262624;
+    --text: #ffffff; --text-2: #c3c2b7; --muted: #9a998f;
+    --lit: #4cc24c; --lit-bg: #1c2f1b; --adapt: #5b9cec; --adapt-bg: #1d2a3b;
+    --choice: #f0b04a; --choice-bg: #3a2f14; --accent: #7fc4d4;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111110; --surface: #1a1a19; --border: #2e2e2c; --grid: #262624;
+  --text: #ffffff; --text-2: #c3c2b7; --muted: #9a998f;
+  --lit: #4cc24c; --lit-bg: #1c2f1b; --adapt: #5b9cec; --adapt-bg: #1d2a3b;
+  --choice: #f0b04a; --choice-bg: #3a2f14; --accent: #7fc4d4;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 820px; margin: 0 auto; padding: 24px 16px 64px; }
+header.doc { padding: 8px 0 16px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+header.doc .kicker { color: var(--accent); font-weight: 600; font-size: 14px; letter-spacing: .02em; }
+h1 { font-size: 28px; line-height: 1.2; margin: 4px 0 8px; letter-spacing: -0.02em; }
+h2 { font-size: 21px; margin: 40px 0 8px; letter-spacing: -0.01em; scroll-margin-top: 16px; }
+h3 { font-size: 16px; margin: 22px 0 6px; }
+p { margin: 8px 0; }
+.lede { color: var(--text-2); font-size: 17px; }
+.muted { color: var(--muted); }
+.small { font-size: 14px; }
+a { color: var(--accent); }
+code, .f { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
+.f { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin: 10px 0; white-space: pre; overflow-x: auto; font-size: 13px; line-height: 1.55; }
+@media print { .f { white-space: pre-wrap; } }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; margin: 12px 0; }
+.tag { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 99px; padding: 1px 8px; margin: 0 2px; white-space: nowrap; vertical-align: 1px; }
+.tag.lit { color: var(--lit); background: var(--lit-bg); }
+.tag.adapt { color: var(--adapt); background: var(--adapt-bg); }
+.tag.choice { color: var(--choice); background: var(--choice-bg); }
+.legend-tags { display: grid; gap: 6px; font-size: 14px; }
+.toc ol { margin: 6px 0; padding-left: 22px; columns: 2; column-gap: 32px; font-size: 15px; }
+@media (max-width: 560px) { .toc ol { columns: 1; } }
+.table-wrap { overflow-x: auto; margin: 10px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 8px; border-bottom: 1px solid var(--grid); }
+thead th { color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); }
+tbody th { font-weight: 600; }
+td .tag { margin-top: 2px; }
+ul, ol { padding-left: 22px; }
+li { margin: 4px 0; }
+.q { counter-reset: q; list-style: none; padding: 0; }
+.q li { counter-increment: q; position: relative; padding: 10px 12px 10px 44px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin: 8px 0; }
+.q li::before { content: counter(q); position: absolute; left: 12px; top: 10px; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--surface); font-size: 13px; font-weight: 700; text-align: center; line-height: 22px; }
+.refs li { margin: 8px 0; font-size: 15px; }
+footer { margin-top: 48px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+.back { font-size: 14px; }
+@media print {
+  :root, html:root:not([data-print]) { color-scheme: light; --bg: #fff; --surface: #fff; --text: #000; --text-2: #333; --muted: #555; --border: #ccc; --grid: #ddd; --accent: #0f4c5c;
+    --lit: #0a7d0a; --lit-bg: #e5f4e3; --adapt: #2a78d6; --adapt-bg: #e6effb; --choice: #9a5b00; --choice-bg: #fff3dc; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-size: 11pt; }
+  main { max-width: none; padding: 0; }
+  .back { display: none; }
+  h2 { break-after: avoid; }
+  .card, tr, .q li { break-inside: avoid; }
+  a { color: inherit; text-decoration: none; }
+  .refs a::after { content: " — " attr(href); font-size: 9pt; color: #555; word-break: break-all; }
+  @page { margin: 16mm; }
+}
+</style>
+</head>
+<body>
+<main>
+<p class="back"><a href="./">← Retour à l'app</a></p>
+
+<header class="doc">
+  <div class="kicker">ALCYON · DOCUMENT DE MÉTHODE</div>
+  <h1>Sur quoi s'appuient les calculs d'Alcyon</h1>
+  <p class="lede">Ce document décrit précisément ce que l'application demande au patient, comment elle en tire un indice, des phases et des alertes, sur quelles sources elle s'appuie, et où se trouvent des choix qui restent à valider. Il est destiné à une relecture par un·e psychiatre.</p>
+  <p class="small muted">Version du 6 octobre 2026. Les valeurs ci-dessous sont celles du code de l'application à cette date (fichier <code>app.js</code>).</p>
+</header>
+
+<div class="card">
+  <p class="small" style="margin-top:0"><b>Comment lire ce document.</b> Chaque élément porte une étiquette :</p>
+  <div class="legend-tags">
+    <div><span class="tag lit">Littérature</span> repris d'un critère ou d'un résultat publié (DSM-5, études citées).</div>
+    <div><span class="tag adapt">Adapté</span> inspiré d'une méthode publiée, mais simplifié ou modifié pour une saisie en quelques secondes.</div>
+    <div><span class="tag choice">Choix à valider</span> décision de conception sans validation propre : c'est là que l'avis clinique est le plus utile.</div>
+  </div>
+</div>
+
+<nav class="toc card" aria-label="Sommaire">
+  <b class="small">Sommaire</b>
+  <ol>
+    <li><a href="#objet">Objet et périmètre</a></li>
+    <li><a href="#saisie">Ce que le patient note</a></li>
+    <li><a href="#indice">L'indice du jour</a></li>
+    <li><a href="#multi">Plusieurs relevés par jour</a></li>
+    <li><a href="#phase">Phase et direction</a></li>
+    <li><a href="#alertes">Les alertes</a></li>
+    <li><a href="#etalonnage">Étalonnage personnel</a></li>
+    <li><a href="#signes">Signes personnels et plan d'action</a></li>
+    <li><a href="#traitement">Traitement : avant / après</a></li>
+    <li><a href="#recap">Récapitulatif de consultation</a></li>
+    <li><a href="#securite">Sécurité et confidentialité</a></li>
+    <li><a href="#limites">Limites connues</a></li>
+    <li><a href="#questions">Questions pour la relecture</a></li>
+    <li><a href="#refs">Références</a></li>
+  </ol>
+</nav>
+
+<!-- ================================================================ -->
+<h2 id="objet">1. Objet et périmètre</h2>
+<p>Alcyon est un outil d'<b>auto-surveillance</b> de l'humeur pour des personnes vivant avec un trouble bipolaire, pensé en particulier pour le <b>type II</b>, où l'hypomanie est souvent vécue comme agréable et donc difficile à repérer soi-même. Le principe est celui du <b>life charting</b> : une notation brève et quotidienne, dont l'accumulation rend visibles les tendances, les phases et leurs déclencheurs.</p>
+<ul>
+  <li><b>Ce n'est pas un outil de diagnostic</b> et il ne se substitue pas à une évaluation clinique. Les alertes invitent à contacter le psychiatre ou un proche ; elles ne posent aucune conclusion.</li>
+  <li><b>Temps de saisie visé : 5 à 10 secondes</b>, une à trois fois par jour. Les valeurs de la saisie précédente sont reprises par défaut ; le patient ne modifie que ce qui a changé.</li>
+  <li><b>Aucune donnée ne quitte le téléphone</b> (voir <a href="#securite">§ 11</a>).</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2 id="saisie">2. Ce que le patient note</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Item</th><th>Échelle</th><th>Pourquoi</th><th>Statut</th></tr></thead>
+<tbody>
+<tr><th>Humeur</th><td>−3 à +3 (très basse → très haute), 0 = neutre</td><td>Axe central du life chart : polarité et intensité.</td><td><span class="tag adapt">Adapté</span> NIMH-LCM, MONARCA</td></tr>
+<tr><th>Énergie / activité</th><td>−3 à +3</td><td>L'augmentation de l'activité fait partie du critère A de l'hypomanie et précède souvent l'élévation de l'humeur.</td><td><span class="tag lit">Littérature</span> DSM-5, ASRM</td></tr>
+<tr><th>Sommeil</th><td>heures, par pas de 30 min, nuit précédente</td><td>Le besoin réduit de sommeil est un symptôme cardinal de l'hypomanie et l'un des prodromes les plus fréquents ; les changements de sommeil précèdent souvent un changement d'humeur dès le lendemain.</td><td><span class="tag lit">Littérature</span> Jackson 2003, Andrade-González 2020, Bauer 2006</td></tr>
+<tr><th>Irritabilité</th><td>0–3 (non / un peu / nettement / beaucoup)</td><td>Présente en phase haute, en phase basse et dans les états mixtes.</td><td><span class="tag lit">Littérature</span> DSM-5 (critère A)</td></tr>
+<tr><th>Anxiété</th><td>0–3</td><td>Fréquente ; associée aux caractéristiques mixtes.</td><td><span class="tag adapt">Adapté</span></td></tr>
+<tr><th>Pensées rapides</th><td>0–3</td><td>Fuite des idées, logorrhée : symptôme B de l'hypomanie (item « parole » de l'ASRM).</td><td><span class="tag lit">Littérature</span> DSM-5, ASRM</td></tr>
+<tr><th>Optionnels</th><td>0–3</td><td>Impulsivité (dépenses, risques), difficultés de concentration, stress / événement, alcool / substances. Choisis par le patient, idéalement avec son psychiatre.</td><td><span class="tag adapt">Adapté</span> MONARCA</td></tr>
+<tr><th>Signes personnels</th><td>à cocher</td><td>Signes avant-coureurs propres au patient (phase haute / basse) et signes de stabilité. Voir <a href="#signes">§ 8</a>.</td><td><span class="tag lit">Littérature</span> Perry 1999</td></tr>
+<tr><th>Oubli de traitement</th><td>case « je n'ai pas pris mon traitement »</td><td>Le traitement est considéré comme pris par défaut ; seul l'oubli est saisi.</td><td><span class="tag choice">Choix à valider</span></td></tr>
+<tr><th>Note libre</th><td>280 caractères</td><td>Événements de vie, déclencheurs (principe du life chart).</td><td><span class="tag lit">Littérature</span> NIMH-LCM</td></tr>
+</tbody></table></div>
+<p class="small muted"><b>Différence notable avec la NIMH-LCM :</b> le life chart du NIMH cote la sévérité d'après le <i>retentissement fonctionnel</i> (léger, modéré, sévère). Alcyon demande une auto-évaluation subjective de l'humeur, plus rapide mais sans ancrage fonctionnel. Le libellé des niveaux (« un peu haute », « haute », « très haute ») n'est pas défini plus précisément.</p>
+
+<!-- ================================================================ -->
+<h2 id="indice">3. L'indice du jour</h2>
+<p>Pour tracer une seule courbe, les trois mesures principales sont combinées en un <b>indice de −3 (bas) à +3 (haut)</b> :</p>
+<code class="f">indice = 0,5 × humeur
+       + 0,3 × énergie
+       + 0,2 × écart de sommeil
+
+écart de sommeil = sommeil habituel − heures dormies,
+                   borné à [−3 ; +3]
+  1 h de moins que d'habitude → +1 (vers le haut)
+  1 h de plus                 → −1 (vers le bas)
+
+sommeil habituel = réglé par le patient
+                   (« quand je vais bien »), 7 h 30 par défaut</code>
+<ul>
+  <li><span class="tag choice">Choix à valider</span> <b>Pondérations 50 / 30 / 20.</b> L'humeur domine parce qu'elle est l'axe du life chart ; l'énergie et le sommeil sont inclus parce qu'ils bougent souvent <i>avant</i> l'humeur dans l'hypomanie. Aucune étude ne fixe ces poids.</li>
+  <li><span class="tag choice">Choix à valider</span> <b>Sommeil long → vers le bas.</b> L'hypersomnie accompagne souvent la dépression bipolaire, mais pas toujours ; un sommeil long peut aussi être une récupération.</li>
+  <li><b>Zones</b> : zone haute si indice ≥ +1, zone basse si indice ≤ −1. <span class="tag choice">Choix à valider</span></li>
+  <li>Les symptômes 0–3 <b>n'entrent pas dans l'indice</b> (pour qu'il reste comparable si le patient change ses items) ; ils servent aux alertes.</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2 id="multi">4. Plusieurs relevés par jour</h2>
+<p>Le patient peut choisir 1, 2 ou 3 relevés par jour (journée ; matinée + après-midi/soirée ; matinée + après-midi + soirée), chacun avec un rappel à l'heure choisie. La variabilité intra-journalière de l'humeur est en effet une dimension à part entière de l'instabilité de l'humeur.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Donnée</th><th>Valeur retenue pour la journée</th><th>Statut</th></tr></thead>
+<tbody>
+<tr><th>Humeur, énergie</th><td>Moyenne des relevés de la journée</td><td><span class="tag choice">Choix à valider</span></td></tr>
+<tr><th>Symptômes 0–3</th><td>Maximum de la journée (un après-midi très irritable ne doit pas être dilué)</td><td><span class="tag choice">Choix à valider</span></td></tr>
+<tr><th>Signes personnels</th><td>Union des signes cochés dans la journée</td><td></td></tr>
+<tr><th>Sommeil, oubli, note</th><td>Communs à la journée</td><td></td></tr>
+<tr><th>Écart intra-journalier</th><td>Max − min de l'humeur entre les relevés ; tracé sur le graphe</td><td><span class="tag adapt">Adapté</span> Broome 2015</td></tr>
+</tbody></table></div>
+
+<!-- ================================================================ -->
+<h2 id="phase">5. Phase et direction</h2>
+<code class="f">phase = moyenne de l'indice sur les 7 derniers jours
+        calendaires (au moins 3 jours notés)
+  ≥ +1    phase haute
+  ≥ +0,5  tendance haute
+  ≤ −0,5  tendance basse
+  ≤ −1    phase basse
+  sinon   stable
+
+direction = pente de la droite des moindres carrés
+            sur ces 7 jours (au moins 3 points)
+  > +0,15 / jour   en montée
+  < −0,15 / jour   en descente
+  sinon            plutôt stable</code>
+<p><span class="tag choice">Choix à valider</span> La fenêtre de 7 jours lisse le bruit quotidien mais introduit un retard de quelques jours ; les seuils ±0,5 et ±1 sont des choix.</p>
+
+<!-- ================================================================ -->
+<h2 id="alertes">6. Les alertes</h2>
+<p>Les alertes ne sont calculées que si le dernier relevé date d'aujourd'hui ou d'hier ; sinon, l'app signale l'absence de relevé (l'interruption du suivi coïncide souvent avec un changement d'humeur). « Jours d'affilée » = jours calendaires consécutifs <i>notés</i> ; un jour manquant interrompt la série. Les alertes graves (⚠️) proposent d'appeler le psychiatre et/ou un proche ; une carte « Que faire » affiche le plan d'action du patient.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Alerte</th><th>Condition exacte</th><th>Niveau</th><th>Fondement</th></tr></thead>
+<tbody>
+<tr><th>Zone haute prolongée</th><td>Indice ≥ +1 pendant 2 jours d'affilée (vigilance) ; 4 jours ou plus (alerte)</td><td>vigilance → grave</td><td><span class="tag lit">Littérature</span> DSM-5 : épisode hypomaniaque ≥ 4 jours consécutifs</td></tr>
+<tr><th>Moins de sommeil, sans fatigue</th><td>Sur les 3 derniers jours : ≥ 2 nuits courtes (≥ 2 h sous l'habituel, voir § 7) <b>et</b> au moins un jour d'énergie ≥ +1. Grave si humeur ≥ +1 un de ces jours.</td><td>vigilance / grave</td><td><span class="tag lit">Littérature</span> Jackson 2003, Bauer 2006 ; <span class="tag choice">seuil 2 h à valider</span></td></tr>
+<tr><th>Pensées qui accélèrent</th><td>≥ 2 jours sur 3 avec pensées rapides ou impulsivité « inhabituelles » (≥ 2/3, ou seuil personnel § 7). Grave si indice ≥ +1 ou nuit courte ces jours-là.</td><td>vigilance / grave</td><td><span class="tag lit">Littérature</span> DSM-5 critère B</td></tr>
+<tr><th>Impulsivité forte</th><td>Impulsivité 3/3 (ou seuil personnel fort) un des 3 derniers jours. Conseil : règle des 48 h avant dépense ou décision importante.</td><td>vigilance</td><td><span class="tag choice">Choix à valider</span></td></tr>
+<tr><th>Signes mixtes</th><td>≥ 2 jours sur 3 avec humeur ≤ −1 <b>et</b> (énergie ≥ +1 ou irritabilité / anxiété / pensées rapides inhabituelles). Déclenche aussi l'encart de crise.</td><td>grave</td><td><span class="tag adapt">Adapté</span> DSM-5, spécificateur « caractéristiques mixtes »</td></tr>
+<tr><th>Zone basse prolongée</th><td>Indice ≤ −1 : 3 jours d'affilée (vigilance), 7 jours (contacter le psychiatre), 14 jours (alerte grave)</td><td>vigilance → grave</td><td><span class="tag lit">Littérature</span> DSM-5 : épisode dépressif caractérisé ≥ 2 semaines ; <span class="tag choice">paliers 3 et 7 j à valider</span></td></tr>
+<tr><th>Humeur très changeante dans la journée</th><td>≥ 2 jours sur 3 avec un écart ≥ 3 points entre relevés d'une même journée. Grave si signes mixtes.</td><td>vigilance / grave</td><td><span class="tag adapt">Adapté</span> Broome 2015 ; <span class="tag choice">seuil à valider</span></td></tr>
+<tr><th>Irritabilité fréquente</th><td>≥ 3 jours sur 7 avec irritabilité inhabituelle (hors signes mixtes)</td><td>vigilance</td><td><span class="tag choice">Choix à valider</span></td></tr>
+<tr><th>Anxiété persistante</th><td>≥ 4 jours sur 7 avec anxiété inhabituelle (hors signes mixtes)</td><td>vigilance</td><td><span class="tag choice">Choix à valider</span></td></tr>
+<tr><th>Signes personnels</th><td>Phase haute : sur 3 jours, ≥ 3 coches ou ≥ 2 signes différents. Phase basse : même règle sur 5 jours. Grave si associé à 2 jours en zone haute ou une nuit courte (haute), ou 3 jours en zone basse (basse).</td><td>vigilance / grave</td><td><span class="tag lit">Littérature</span> Perry 1999 ; <span class="tag choice">règle de comptage à valider</span></td></tr>
+<tr><th>Montée / chute rapide</th><td>|moyenne des 3 derniers jours − moyenne des 7 jours précédents| ≥ 1,5</td><td>vigilance</td><td><span class="tag choice">Choix à valider</span></td></tr>
+<tr><th>Traitement oublié</th><td>≥ 2 oublis sur les 7 derniers jours. Conseille d'en parler plutôt que d'arrêter seul.</td><td>vigilance</td><td><span class="tag choice">Choix à valider</span></td></tr>
+</tbody></table></div>
+<div class="card small">
+<b>Encart de crise.</b> Affiché si l'humeur est notée à −3 (à n'importe quel relevé du dernier jour) ou en cas de signes mixtes. Il invite à parler à quelqu'un et donne des lignes d'écoute gratuites 24 h/24 : 3114 (France), 0800 32 123 (Belgique, Centre de Prévention du Suicide), 143 (Suisse), 988 (Canada), 112 (urgences), ainsi que les numéros du psychiatre et du proche saisis par le patient. <span class="tag choice">Choix à valider</span> L'app ne pose <b>aucune question directe sur les idées suicidaires</b> (voir <a href="#questions">questions</a>).
+</div>
+
+<!-- ================================================================ -->
+<h2 id="etalonnage">7. Étalonnage personnel (« ma façon de noter »)</h2>
+<p>Chacun utilise une échelle subjective à sa façon : une personne très mesurée ne note presque jamais 3, une autre l'utilise souvent. Pour comparer la personne <i>à elle-même</i> (approche idiographique), l'app apprend ses habitudes de notation.</p>
+<code class="f">déclenchement : ≥ 21 relevés sur les 180 derniers jours
+                (désactivable par le patient)
+
+repère    = médiane des valeurs
+amplitude = 1,25 × écart absolu moyen à la médiane
+            (≈ écart-type pour une loi normale, plus robuste)
+
+Symptômes 0–3 (ajustement dans les deux sens)
+  repère plafonné à 2 ; amplitude ≥ 0,5
+  « inhabituel » si valeur ≥ 1
+                 et (valeur − repère) / amplitude ≥ 1,5
+                 (« fort » : ≥ 2,5)
+  sans étalonnage : inhabituel si ≥ 2 (fort : = 3)
+
+Humeur, énergie (ne peut que rendre plus sensible)
+  repère fixé à 0 (neutralité clinique)
+  amplitude bornée à [0,6 ; 1]
+  valeur ajustée = valeur / amplitude, bornée à [−3 ; +3]
+
+Sommeil (ne peut que rendre plus sensible)
+  amplitude bornée à [0,75 ; 1]
+  écart ajusté = (habituel − dormi) / amplitude
+  nuit courte (ou longue) : écart ≥ 1,5 h
+                            et écart / amplitude ≥ 2
+  sans étalonnage : écart ≥ 2 h</code>
+<ul>
+  <li><b>Exemples.</b> Patient qui note presque toujours l'irritabilité à 0 : un 1 devient « inhabituel ». Patient qui la note souvent à 2 : seul un 3 l'est. Patient très mesuré sur l'humeur (amplitude 0,6) : un +1 compte pour +1,7.</li>
+  <li><b>Garde-fou essentiel.</b> Une première version recentrait aussi l'humeur sur la médiane du patient. En test, 30 jours notés à −2 suivis de 30 jours à 0 faisaient apparaître la phase dépressive à −0,6, donc <b>hors zone basse</b> : une dépression longue devenait « la normale ». La règle actuelle empêche ce masquage : pour l'humeur, l'énergie et le sommeil, l'étalonnage ne peut que rendre l'app <b>plus attentive</b>, jamais moins.</li>
+  <li><span class="tag choice">Choix à valider</span> Seuil de 21 relevés, fenêtre de 180 jours, bornes d'amplitude, seuils z de 1,5 / 2,5 : aucun n'est issu d'une étude ; le patient voit le détail de son étalonnage dans l'app.</li>
+  <li><span class="tag choice">Choix à valider</span> Un symptôme noté souvent haut (moyenne ≥ 1,5 / 3) est signalé au patient comme « très présent au quotidien, à évoquer en consultation », puisque l'étalonnage le rend moins visible dans les alertes.</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2 id="signes">8. Signes personnels et plan d'action</h2>
+<p>Le patient constitue sa propre liste de signes, chacun rattaché à la phase haute (↑), à la phase basse (↓) ou à la stabilité (=). Des suggestions sont proposées (« je dors moins sans être fatigué·e », « je dépense plus que d'habitude », « je m'isole, j'annule des sorties », « je me réveille reposé·e »…). Il rédige aussi un <b>plan d'action</b> pour chaque pôle (« si ça monte… », « si ça descend… »), affiché avec les alertes.</p>
+<p><span class="tag lit">Littérature</span> L'identification des prodromes personnels (<i>relapse signature</i>) et d'une conduite à tenir précoce est une intervention évaluée : dans l'essai de Perry et al. (1999), elle allonge le délai avant rechute maniaque et réduit les rechutes maniaques ; une revue Cochrane (Morriss et al., 2007) va dans le même sens. Les revues systématiques montrent que la plupart des patients peuvent décrire leurs prodromes, avec une grande variabilité individuelle, d'où une liste personnelle plutôt qu'une liste fixe.</p>
+<p>Les signes de stabilité ne déclenchent aucune alerte ; ils servent de point de repère positif (et leur disparition peut se remarquer sur le graphe).</p>
+
+<!-- ================================================================ -->
+<h2 id="traitement">9. Traitement : comparaison avant / après</h2>
+<p>Le patient saisit son traitement (médicament, dose, moment de prise) et chaque changement daté. Chaque changement est marqué d'une ligne sur le graphe. Pour chaque changement, l'app compare deux périodes :</p>
+<code class="f">avant : 28 jours précédant le changement
+        (ou depuis le changement précédent, s'il est plus récent)
+après : 28 jours à partir du changement
+        (ou jusqu'au changement suivant / aujourd'hui)
+comparaison seulement si ≥ 7 jours notés de chaque côté
+
+indicateurs : indice moyen
+              % de jours en zone haute, % en zone basse
+              variabilité (écart-type de l'indice)
+              sommeil moyen
+« mieux »   : indice moyen plus proche de 0, moins de jours
+              en zones, moins de variabilité (écart ≥ 0,05)</code>
+<p><span class="tag choice">Choix à valider</span> Il s'agit d'une comparaison descriptive, <b>pas d'une mesure d'effet</b>. Biais principaux : délai d'action variable selon la molécule (souvent plusieurs semaines) ; régression vers la moyenne (un traitement est souvent modifié au plus fort d'un épisode, une amélioration ensuite est attendue même sans effet propre) ; autres changements simultanés ; données manquantes. L'app affiche cet avertissement.</p>
+
+<!-- ================================================================ -->
+<h2 id="recap">10. Récapitulatif de consultation</h2>
+<p>Document imprimable couvrant la période depuis la dernière consultation notée (par défaut 3 mois) : nombre de relevés, indice moyen et étendue, jours en zones haute et basse, sommeil, nuits courtes et longues, oublis de traitement, écart intra-journalier moyen, graphes, tableau des symptômes, signes personnels, traitement et changements, plan d'action, notes.</p>
+<code class="f">phases repérées : moyenne 7 jours
+  ≥ +1 pendant au moins 4 jours → phase haute
+  ≤ −1 pendant au moins 7 jours → phase basse</code>
+<p class="small muted">Comme la moyenne glissante est décalée, les dates de début et de fin sont approximatives de quelques jours ; le document le précise.</p>
+
+<!-- ================================================================ -->
+<h2 id="securite">11. Sécurité et confidentialité</h2>
+<ul>
+  <li><b>Stockage local uniquement</b> (stockage du navigateur du téléphone) : pas de compte, pas de serveur, pas de base de données, pas de statistiques d'usage.</li>
+  <li>Une politique de sécurité de contenu (<code>connect-src 'none'</code>) <b>interdit techniquement</b> à la page d'envoyer la moindre requête réseau.</li>
+  <li>Le patient exporte lui-même ses données (sauvegarde JSON, tableau CSV, récapitulatif PDF / HTML) et décide à qui les transmettre.</li>
+  <li>Contrepartie : sans serveur, les rappels ne partent que si l'app est ouverte ou en arrière-plan, et une perte du téléphone sans sauvegarde fait perdre l'historique (l'app rappelle de sauvegarder après 30 jours).</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2 id="limites">12. Limites connues</h2>
+<ul>
+  <li><b>Aucune validation clinique</b> d'Alcyon lui-même : ni sensibilité, ni spécificité des alertes, ni corrélation avec des échelles cliniques (YMRS, MADRS, QIDS…). Les seuils sont des choix raisonnés, pas des valeurs étalonnées.</li>
+  <li><b>Auto-évaluation et insight.</b> En hypomanie, l'insight peut diminuer : le patient peut sous-coter son humeur. C'est pourquoi le sommeil, l'énergie, les signes concrets et l'avis des proches sont mis en avant ; il n'existe pas encore de saisie par un proche.</li>
+  <li><b>Effet de la surveillance.</b> Dans l'essai MONARCA I (Faurholt-Jepsen et al., 2015), l'auto-surveillance quotidienne sur smartphone n'a pas réduit les symptômes dépressifs (ils étaient même plus persistants dans le groupe intervention), mais était associée à moins de symptômes maniaques. L'auto-surveillance n'est pas neutre et doit s'inscrire dans un suivi.</li>
+  <li><b>Pas d'ancrage fonctionnel</b> des niveaux d'humeur, contrairement à la NIMH-LCM.</li>
+  <li><b>Données manquantes</b> : un jour non noté interrompt les séries ; les moyennes sont calculées sur les jours notés.</li>
+  <li><b>Pas de prise en compte</b> du cycle menstruel, des saisons, ni des cycles rapides (≥ 4 épisodes par an) en tant que tels.</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2 id="questions">13. Questions pour la relecture</h2>
+<p>Les points sur lesquels un avis clinique serait le plus utile :</p>
+<ol class="q">
+  <li><b>Pondérations de l'indice</b> (50 % humeur, 30 % énergie, 20 % sommeil) : vous semblent-elles raisonnables pour un trouble bipolaire de type II ? Faudrait-il donner plus de poids au sommeil ou à l'énergie pour détecter l'hypomanie plus tôt ?</li>
+  <li><b>Seuils de zone</b> (±1 sur l'indice) et <b>seuils de phase</b> (±0,5 et ±1 sur la moyenne 7 jours).</li>
+  <li><b>Paliers des alertes</b> : 2 puis 4 jours en zone haute ; 3, 7 puis 14 jours en zone basse. Faut-il réagir plus tôt pour la phase basse ?</li>
+  <li><b>Nuit courte</b> : seuil de 2 h sous le sommeil habituel (1 h 30 chez un dormeur très régulier). Bauer et al. (2008) évoquent un changement de durée de sommeil de plus de 3 h comme annonciateur d'un changement d'humeur important ; un seuil plus bas est-il pertinent pour une alerte précoce ?</li>
+  <li><b>Définition opérationnelle des signes mixtes</b> (humeur ≤ −1 avec énergie haute ou irritabilité / anxiété / pensées rapides inhabituelles, 2 jours sur 3) : trop large, trop étroite ?</li>
+  <li><b>Plusieurs relevés par jour</b> : moyenne pour l'humeur, maximum pour les symptômes. Et le seuil d'écart intra-journalier (≥ 3 points, 2 jours sur 3).</li>
+  <li><b>Étalonnage personnel</b> : le principe vous paraît-il cliniquement acceptable ? Les bornes choisies suffisent-elles à éviter de masquer un épisode ?</li>
+  <li><b>Risque suicidaire</b> : l'app n'interroge pas directement les idées suicidaires. Faut-il ajouter une question (par exemple facultative, ou déclenchée quand l'humeur est très basse), et avec quelle conduite à tenir ?</li>
+  <li><b>Lignes d'écoute et formulation</b> de l'encart de crise et des messages d'alerte.</li>
+  <li><b>Comparaison avant / après traitement</b> : utile en consultation, ou risque de sur-interprétation par le patient ?</li>
+  <li><b>Items manquants</b> qui vous semblent importants (ex. idées de grandeur, libido, appétit, ralentissement, retentissement fonctionnel, événements de vie).</li>
+</ol>
+
+<!-- ================================================================ -->
+<h2 id="refs">14. Références</h2>
+<ol class="refs">
+  <li>American Psychiatric Association. <i>Diagnostic and Statistical Manual of Mental Disorders</i>, 5<sup>e</sup> éd. (DSM-5). 2013. Critères de l'épisode hypomaniaque (≥ 4 jours consécutifs), de l'épisode dépressif caractérisé (≥ 2 semaines) et spécificateur « avec caractéristiques mixtes ».</li>
+  <li>Denicoff KD, Leverich GS, Nolen WA, et al. Validation of the prospective NIMH-Life-Chart Method (NIMH-LCM™-p) for longitudinal assessment of bipolar illness. <i>Psychological Medicine</i>. 2000. <a href="https://www.cambridge.org/core/journals/psychological-medicine/article/validation-of-the-prospective-nimhlifechart-method-nimhlcmtmp-for-longitudinal-assessment-of-bipolar-illness/8E493183C61D28841E09B22B51B01C3A">cambridge.org</a></li>
+  <li>NIMH Life Chart Method – fiche patient (mood chart). <a href="https://depts.washington.edu/psychres/wordpress/wp-content/uploads/2017/09/nimh_moodchart.pdf">depts.washington.edu</a></li>
+  <li>Schärer LO, Krienke UJ, Graf SM, et al. Validation of life-charts documented with the personal life-chart app – a self-monitoring tool for bipolar disorder. <i>BMC Psychiatry</i>. 2015. <a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4367878/">PMC4367878</a></li>
+  <li>Faurholt-Jepsen M, Frost M, Ritz C, et al. Daily electronic self-monitoring in bipolar disorder using smartphones – the MONARCA I trial: a randomized, placebo-controlled, single-blind, parallel group trial. <i>Psychological Medicine</i>. 2015;45(13):2691–2704. <a href="https://www.cambridge.org/core/journals/psychological-medicine/article/daily-electronic-selfmonitoring-in-bipolar-disorder-using-smartphones-the-monarca-i-trial-a-randomized-placebocontrolled-singleblind-parallel-group-trial/C45C6B5F4A25A022155721C61F29E882">cambridge.org</a></li>
+  <li>Faurholt-Jepsen M, et al. Daily electronic monitoring of subjective and objective measures of illness activity in bipolar disorder using smartphones – the MONARCA II trial protocol. <a href="https://pure.itu.dk/en/publications/daily-electronic-monitoring-of-subjective-and-objective-measures-/">pure.itu.dk</a></li>
+  <li>Altman EG, Hedeker D, Peterson JL, Davis JM. The Altman Self-Rating Mania Scale. <i>Biological Psychiatry</i>. 1997. <a href="https://en.wikipedia.org/wiki/Altman_Self-Rating_Mania_Scale">présentation</a></li>
+  <li>Jackson A, Cavanagh J, Scott J. A systematic review of manic and depressive prodromes. <i>Journal of Affective Disorders</i>. 2003;74(3):209–217. <a href="https://eprints.gla.ac.uk/20138">eprints.gla.ac.uk</a></li>
+  <li>Andrade-González N, Álvarez-Cadenas L, Saiz-Ruiz J, Lahera G. Initial and relapse prodromes in adult patients with episodes of bipolar disorder: a systematic review. <i>European Psychiatry</i>. 2020. Les troubles du sommeil / la diminution du besoin de sommeil y figurent parmi les prodromes de rechute les plus cités avant un épisode (hypo)maniaque (13,8 à 85,7 % selon les études). <a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7315869/">PMC7315869</a></li>
+  <li>Bauer M, Grof P, Rasgon N, et al. Temporal relation between sleep and mood in patients with bipolar disorder. <i>Bipolar Disorders</i>. 2006;8(2):160–167. <a href="https://pubmed.ncbi.nlm.nih.gov/?term=Temporal+relation+between+sleep+and+mood+in+patients+with+bipolar+disorder">PubMed</a></li>
+  <li>Bauer M, et al. Changes in self-reported sleep duration predict mood changes in bipolar disorder (research letter). <i>Psychological Medicine</i>. 2008 (en ligne). <a href="https://www.cambridge.org/core/product/95404264C1F9D98E1C7C6F0623DC03FE/core-reader">cambridge.org</a></li>
+  <li>Perry A, Tarrier N, Morriss R, McCarthy E, Limb K. Randomised controlled trial of efficacy of teaching patients with bipolar disorder to identify early symptoms of relapse and obtain treatment. <i>BMJ</i>. 1999;318:149–153. <a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC27688/">PMC27688</a></li>
+  <li>Morriss R, Faizal MA, Jones AP, et al. Interventions for helping people recognise early signs of recurrence in bipolar disorder. <i>Cochrane Database of Systematic Reviews</i>. 2007. <a href="https://www.cochranelibrary.com/cdsr/doi/10.1002/14651858.CD004854.pub2/full">cochranelibrary.com</a></li>
+  <li>Broome MR, Saunders KEA, Harrison PJ, Marwaha S. Mood instability: significance, definition and measurement. <i>British Journal of Psychiatry</i>. 2015;207(4):283–285. <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC4589661/">PMC4589661</a></li>
+</ol>
+
+<footer>
+  <p>Alcyon est un projet personnel, sans affiliation institutionnelle. Ce document décrit le fonctionnement de l'application ; il ne constitue pas un avis médical. Les retours de relecture peuvent porter directement sur les numéros de section et de question ci-dessus.</p>
+  <p>Méthode rédigée avec l'aide de Claude (Anthropic) ; les références ont été vérifiées en ligne, les valeurs proviennent du code de l'application.</p>
+</footer>
+</main>
+</body>
+</html>
