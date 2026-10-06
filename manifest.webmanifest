@@ -1,14 +1,14 @@
 {
   "id": "./",
-  "name": "Bip – Humeur du jour",
-  "short_name": "Bip",
+  "name": "Alcyon – Humeur du jour",
+  "short_name": "Alcyon",
   "description": "Suivi quotidien de l'humeur pour la bipolarité. Données 100 % sur l'appareil.",
   "lang": "fr",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f4f3f0",
+  "background_color": "#0f4c5c",
   "theme_color": "#f4f3f0",
   "categories": ["health", "medical", "lifestyle"],
   "icons": [

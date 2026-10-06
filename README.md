@@ -1,4 +1,7 @@
-# Bip – humeur du jour
+# Alcyon – humeur du jour
+
+> Dans la mythologie grecque, l'alcyon fait son nid sur la mer en plein hiver ; les dieux calment
+> alors les flots pendant quelques jours, les « jours alcyoniens ». Des jours de calme au milieu des tempêtes.
 
 Petit site pour suivre son humeur au quotidien quand on vit avec un trouble bipolaire
 (pensé en particulier pour le **type 2**, où la phase haute est difficile à repérer soi-même).
@@ -43,7 +46,7 @@ les 28 jours avant et après : indice moyen, jours en zone haute / basse, variab
 
 ## Ma façon de noter (étalonnage personnel)
 
-Chacun utilise les curseurs à sa façon. Après 21 relevés, Bip apprend sur les 6 derniers mois
+Chacun utilise les curseurs à sa façon. Après 21 relevés, Alcyon apprend sur les 6 derniers mois
 le **repère** (médiane) et l'**amplitude habituelle** (écart moyen à la médiane) de chaque curseur,
 et raisonne ensuite en écarts à ces habitudes :
 
@@ -118,8 +121,8 @@ Site statique, aucun build : servir le dossier (`python3 -m http.server`) ou pub
 - **iPhone / iPad** : Safari → bouton *Partager* → *Sur l'écran d'accueil*. L'app affiche ces instructions
   au premier lancement. À faire avant de commencer : sur iOS, l'app installée a son propre stockage, séparé
   de Safari (on peut transférer avec export / import).
-- **Android** : Chrome propose *Installer l'application* ; Bip affiche aussi un bouton *Installer*.
+- **Android** : Chrome propose *Installer l'application* ; Alcyon affiche aussi un bouton *Installer*.
 
-Une fois installée, Bip s'ouvre en plein écran et fonctionne hors connexion (service worker).
+Une fois installée, Alcyon s'ouvre en plein écran et fonctionne hors connexion (service worker).
 
-> Bip n'est pas un outil de diagnostic et ne remplace pas l'avis d'un psychiatre.
+> Alcyon n'est pas un outil de diagnostic et ne remplace pas l'avis d'un psychiatre.

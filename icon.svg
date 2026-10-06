@@ -1,1 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#1a1a19"/><path d="M8 34 C16 34 18 16 26 16 S34 48 42 48 S50 30 56 30" fill="none" stroke="#fcfcfb" stroke-width="5" stroke-linecap="round"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#0f4c5c"/>
+  <!-- soleil d'hiver -->
+  <circle cx="44" cy="22" r="7" fill="#f2a65a"/>
+  <!-- l'alcyon en vol -->
+  <path d="M15 21 Q20 20.5 24.5 27 Q29 20.5 34 21" fill="none" stroke="#fcfcfb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- la mer apaisée -->
+  <path d="M10 42 q5.5 -3 11 0 t11 0 t11 0 t11 0" fill="none" stroke="#fcfcfb" stroke-width="3" stroke-linecap="round"/>
+  <path d="M16 50 q4 -2 8 0 t8 0 t8 0 t8 0" fill="none" stroke="#fcfcfb" stroke-opacity=".55" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

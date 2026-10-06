@@ -1,7 +1,7 @@
 'use strict';
 
 /* =========================================================
-   Bip – suivi quotidien de l'humeur (bipolarité)
+   Alcyon – suivi quotidien de l'humeur (bipolarité)
    Tout est stocké localement (localStorage), rien n'est envoyé.
    ========================================================= */
 
@@ -621,7 +621,7 @@ function renderStatus() {
   const a = analyze();
   const status = $('#status'), alertsEl = $('#alerts'), crisis = $('#crisis');
   if (!a) {
-    status.innerHTML = '<p class="ok">Notez votre journée chaque soir. Après 3 jours, Bip vous indique votre phase et votre direction ; l\'historique se construit au fil des semaines.</p>';
+    status.innerHTML = '<p class="ok">Notez votre journée chaque soir. Après 3 jours, Alcyon vous indique votre phase et votre direction ; l\'historique se construit au fil des semaines.</p>';
     alertsEl.innerHTML = ''; crisis.hidden = true;
     return;
   }
@@ -1015,7 +1015,7 @@ function renderTreatCard() {
   const cur = treatmentOn(today()), list = settings.treatments;
   const box = $('#treat-current');
   if (!list.length) {
-    box.innerHTML = `<p class="muted small">Indiquez ce que vous prenez actuellement. À chaque changement (dose, ajout, arrêt), notez-le : une ligne apparaîtra sur le graphe et Bip comparera les semaines avant et après.</p>
+    box.innerHTML = `<p class="muted small">Indiquez ce que vous prenez actuellement. À chaque changement (dose, ajout, arrêt), notez-le : une ligne apparaîtra sur le graphe et Alcyon comparera les semaines avant et après.</p>
       <button type="button" class="primary-sm" data-treat-edit>Définir mon traitement actuel</button>`;
   } else {
     box.innerHTML = `<p class="small">Depuis le <b>${fmtShort(cur ? cur.date : list[0].date)}</b> :</p>
@@ -1131,7 +1131,7 @@ $('#r-share').addEventListener('click', () => {
   const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(reportTitle())}</title><style>${css} body{background:#fff} main{padding:16px}</style></head>
 <body class="report-mode"><main>${$('#report-body').innerHTML}</main></body></html>`;
-  saveFile(`bip-recapitulatif-${$('#r-from').value}-${$('#r-to').value}.html`, html, 'text/html');
+  saveFile(`alcyon-recapitulatif-${$('#r-from').value}-${$('#r-to').value}.html`, html, 'text/html');
 });
 function reportTitle() { return 'Suivi de l\'humeur' + (settings.reportName ? ' – ' + settings.reportName : ''); }
 
@@ -1143,7 +1143,7 @@ function renderReport() {
   const body = $('#report-body');
   const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0) + ' %';
   const head = `<header class="rp-head"><h1>${esc(reportTitle())}</h1>
-    <p>Du <b>${fmtLong(from)}</b> au <b>${fmtLong(to)}</b> · document généré le ${fmtShort(today())} ${fromStr(today()).getFullYear()} avec Bip</p></header>`;
+    <p>Du <b>${fmtLong(from)}</b> au <b>${fmtLong(to)}</b> · document généré le ${fmtShort(today())} ${fromStr(today()).getFullYear()} avec Alcyon</p></header>`;
   if (!es.length) { body.innerHTML = head + '<p class="empty">Aucun relevé sur cette période.</p>'; return; }
 
   const idx = es.map(dayIndex);
@@ -1374,8 +1374,8 @@ function renderBackupInfo() {
 }
 
 async function exportBackup() {
-  const payload = { app: 'bip', version: 1, exportedAt: new Date().toISOString(), settings, entries };
-  const ok = await saveFile(`bip-sauvegarde-${today()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+  const payload = { app: 'alcyon', version: 1, exportedAt: new Date().toISOString(), settings, entries };
+  const ok = await saveFile(`alcyon-sauvegarde-${today()}.json`, JSON.stringify(payload, null, 2), 'application/json');
   if (ok) { save(KEY_BACKUP, today()); renderBackupInfo(); flash('#s-toast', 'Sauvegarde créée ✓'); }
 }
 $('#d-export').addEventListener('click', exportBackup);
@@ -1389,7 +1389,7 @@ $('#d-csv').addEventListener('click', () => {
       ...['high', 'low'].map(p => (e.signs || []).map(signById).filter(g => g && g.pole === p).map(g => g.text).join(' / ')), e.missed ? 'non' : 'oui', treatmentOn(d) ? treatText(treatmentOn(d)) : '', dayIndex(e), w.n >= 3 ? w.avg.toFixed(2) : '', e.note || '']);
   }
   const csv = rows.map(r => r.map(c => /[",;\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : c).join(';')).join('\n');
-  saveFile(`bip-humeur-${today()}.csv`, '﻿' + csv, 'text/csv');
+  saveFile(`alcyon-humeur-${today()}.csv`, '﻿' + csv, 'text/csv');
 });
 
 /* Vérifie et nettoie un relevé venant d'un fichier ; null s'il est inutilisable */
@@ -1452,7 +1452,7 @@ $('#d-import').addEventListener('change', async ev => {
     panel.hidden = false;
   } catch (e) {
     pendingImport = null;
-    panel.innerHTML = '<p class="small">Ce fichier n\'est pas une sauvegarde Bip lisible.</p><div class="btns"><button type="button" data-imp="cancel">OK</button></div>';
+    panel.innerHTML = '<p class="small">Ce fichier n\'est pas une sauvegarde Alcyon lisible.</p><div class="btns"><button type="button" data-imp="cancel">OK</button></div>';
     panel.hidden = false;
   }
 });
@@ -1552,7 +1552,7 @@ function demoYear() {
 
 /* ---------- rappels (tant que l'app est ouverte ou en arrière-plan) ---------- */
 async function notify(title, body, slot) {
-  const opts = { body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'bip-' + slot, data: { slot } };
+  const opts = { body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'alcyon-' + slot, data: { slot } };
   try {
     const reg = 'serviceWorker' in navigator && await navigator.serviceWorker.getRegistration();
     if (reg) { await reg.showNotification(title, opts); return; }
@@ -1575,7 +1575,7 @@ function checkReminders() {
     const done = settings.slotCount === 1 ? !!entries[d] : !!(e.slots && e.slots[x.id]);
     // dans les 3 h qui suivent l'heure du rappel, une seule fois, et seulement si pas encore noté
     if (done || sent.slots.includes(x.id) || now < x.time || now > addMin(x.time, 180)) continue;
-    notify('Bip', x.ask + ' 5 secondes pour le noter.', x.id);
+    notify('Alcyon', x.ask + ' 5 secondes pour le noter.', x.id);
     sent.slots.push(x.id);
   }
   try { localStorage.setItem('bip.reminded.v2', JSON.stringify(sent)); } catch (err) {}
@@ -1605,12 +1605,12 @@ function renderInstall() {
   const box = $('#install'), state = $('#install-state');
   if (isStandalone) {
     box.hidden = true;
-    state.innerHTML = '<p class="ok">✓ Bip est installée sur cet appareil.</p>';
+    state.innerHTML = '<p class="ok">✓ Alcyon est installée sur cet appareil.</p>';
     return;
   }
   let body = '';
   if (deferredPrompt) {
-    body = `<p class="small">Ajoutez Bip à votre écran d'accueil : elle s'ouvre comme une app, fonctionne hors connexion, et vos données restent sur le téléphone.</p>
+    body = `<p class="small">Ajoutez Alcyon à votre écran d'accueil : l'app s'ouvre comme une app, fonctionne hors connexion, et vos données restent sur le téléphone.</p>
       <button type="button" class="primary" data-install>Installer l'app</button>`;
   } else if (isIOS) {
     body = `<p class="small">Pour l'avoir comme une app : dans <b>Safari</b>, touchez <b>Partager</b> <span class="share-ic" aria-hidden="true">⬆︎</span> puis <b>« Sur l'écran d'accueil »</b>.</p>
@@ -1620,7 +1620,7 @@ function renderInstall() {
   }
   state.innerHTML = deferredPrompt ? '<button type="button" data-install>Installer l\'app</button>' : '';
   box.hidden = !body || installDismissed();
-  box.innerHTML = `<div class="install-head"><h2>📲 Installer Bip</h2><button type="button" class="x" data-dismiss aria-label="Masquer">✕</button></div>${body}`;
+  box.innerHTML = `<div class="install-head"><h2>📲 Installer Alcyon</h2><button type="button" class="x" data-dismiss aria-label="Masquer">✕</button></div>${body}`;
 }
 window.addEventListener('beforeinstallprompt', ev => { ev.preventDefault(); deferredPrompt = ev; renderInstall(); });
 window.addEventListener('appinstalled', () => { deferredPrompt = null; $('#install').hidden = true; });
@@ -1669,7 +1669,7 @@ if (DEMO) {
   ];
   settings.reportName = 'Démo';
   entries = demoYear();
-  document.title = 'Bip – démo';
+  document.title = 'Alcyon – démo';
   const bar = document.createElement('div');
   bar.className = 'demo-bar';
   bar.innerHTML = '<b>Mode démo</b> · 1 an de données fictives, rien n\'est enregistré. <a href="./">Retour à mon suivi</a>';
