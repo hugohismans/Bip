@@ -37,13 +37,20 @@ const MOOD_LABELS = { '-3': 'très basse', '-2': 'basse', '-1': 'un peu basse', 
 const ENERGY_LABELS = { '-3': 'à plat', '-2': 'basse', '-1': 'un peu basse', '0': 'normale', '1': 'un peu haute', '2': 'haute', '3': 'survolté·e' };
 
 /* ---------- stockage ---------- */
+/* Mode démo (./?demo) : données fictives gardées en mémoire uniquement.
+   On ne lit ni n'écrit jamais le localStorage du vrai suivi. */
+const DEMO = new URLSearchParams(location.search).has('demo');
+const memStore = {};
+
 function load(key, fallback) {
+  if (DEMO) return key in memStore ? JSON.parse(memStore[key]) : fallback;
   try {
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
   } catch (e) { return fallback; }
 }
 function save(key, value) {
+  if (DEMO) { memStore[key] = JSON.stringify(value); return true; }
   try { localStorage.setItem(key, JSON.stringify(value)); return true; }
   catch (e) { return false; }
 }
@@ -668,32 +675,48 @@ $('#d-wipe').addEventListener('click', () => {
   if (!confirm('Effacer définitivement tous vos relevés sur cet appareil ?')) return;
   entries = {}; save(KEY_ENTRIES, entries); fillForm(today()); renderStatus();
 });
-$('#d-demo').addEventListener('click', () => {
-  if (Object.keys(entries).length && !confirm('Remplacer vos relevés par des données de démonstration ?')) return;
-  entries = demoData(); save(KEY_ENTRIES, entries); fillForm(today()); renderStatus();
-  showTab('history');
-});
-
-/* 120 jours fictifs : stabilité, épisode dépressif, retour, puis montée hypomaniaque récente */
-function demoData() {
+/* Un an fictif, profil type 2 : épisodes dépressifs longs, hypomanies courtes,
+   un passage mixte, des oublis, et une hypomanie qui démarre ces derniers jours. */
+function demoYear() {
   const out = {}, end = today();
-  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  for (let i = 119; i >= 0; i--) {
-    if (rnd() < 0.08) continue; // quelques oublis
-    const d = addDays(end, -i);
-    let level;
-    if (i > 85) level = 0;
-    else if (i > 55) level = -1.8 * Math.sin(((85 - i) / 30) * Math.PI);
-    else if (i > 8) level = 0.2;
-    else level = 0.4 + (8 - i) * 0.3;
-    const noise = () => Math.round((rnd() - 0.5) * 1.6);
-    const mood = clamp(Math.round(level) + noise(), -3, 3);
-    const energy = clamp(Math.round(level * 1.1) + noise(), -3, 3);
-    const sleep = clamp(Math.round((7.5 - level * 1.2 + (rnd() - 0.5) * 1.5) * 2) / 2, 3, 12);
-    const irrit = clamp(Math.round(Math.abs(level) * 0.6 + rnd() * 0.8), 0, 3);
-    const anxiety = clamp(Math.round(Math.max(0, -level) * 0.9 + rnd() * 0.9), 0, 3);
-    const thoughts = clamp(Math.round(Math.max(0, level) * 1.1 + rnd() * 0.7), 0, 3);
-    out[d] = { mood, energy, sleep, irrit, anxiety, thoughts, meds: rnd() > 0.1, note: i === 70 ? 'Conflit au travail' : i === 5 ? 'Plein de projets en tête' : '' };
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // from/to : jours avant aujourd'hui. Valeurs = intensité au pic.
+  const EPISODES = [
+    { from: 330, to: 292, mood: -2, energy: -2, sleep: 2, anxiety: 2, irrit: 1, focus: 2 },
+    { from: 232, to: 222, mood: 2, energy: 2.4, sleep: -2.8, thoughts: 2.6, impuls: 2, irrit: 1.4 },
+    { from: 222, to: 206, mood: -1.2, energy: -1, sleep: 1, anxiety: 1 },
+    { from: 168, to: 158, mood: -1.6, energy: 1.4, sleep: -1.5, irrit: 2.6, anxiety: 2.6, thoughts: 2 },
+    { from: 158, to: 108, mood: -1.9, energy: -1.8, sleep: 1.8, anxiety: 1.8, focus: 2.2, irrit: 0.8 },
+    { from: 75, to: 66, mood: 0.8, energy: 1, sleep: -1, thoughts: 1, stress: 2 },
+    { from: 9, to: -6, mood: 2.6, energy: 2.8, sleep: -3.2, thoughts: 3, impuls: 2.6, irrit: 1.6 },
+  ];
+  const NOTES = { 320: 'Fatigue, envie de rien', 300: 'Reprise du sport', 229: 'Nuit blanche à coder, super idée', 226: 'Gros achat en ligne',
+    165: 'Tendu, dispute avec la famille', 140: 'Arrêt de travail', 112: 'Ça va mieux', 72: 'Déménagement', 40: 'Vacances',
+    5: 'Plein de projets en tête', 2: 'Dormi 4 h, en pleine forme', 1: 'Proche trouve que je parle vite' };
+  for (let i = 364; i >= 0; i--) {
+    const lvl = { mood: 0, energy: 0, sleep: 0, irrit: 0, anxiety: 0, thoughts: 0, impuls: 0, focus: 0, stress: 0 };
+    let inLow = false;
+    for (const ep of EPISODES) {
+      if (i > ep.from || i < ep.to) continue;
+      const t = (ep.from - i) / (ep.from - ep.to);
+      const w = Math.sin(Math.PI * Math.min(1, t));          // montée puis descente
+      const k = ep.to < 0 ? Math.min(1, t * 1.8) : w;         // épisode en cours : pas encore de descente
+      for (const key in lvl) if (ep[key]) lvl[key] += ep[key] * k;
+      if (ep.mood < 0) inLow = true;
+    }
+    if (rnd() < (inLow ? 0.16 : 0.06) && i > 3) continue;     // oublis, plus fréquents en phase basse
+    const d = addDays(end, -i), wd = fromStr(d).getDay();
+    const noise = a => (rnd() - 0.5) * a;
+    const weekend = wd === 0 || wd === 6 ? 0.6 : 0;
+    const lv = (k, a = 1.5) => clamp(Math.round(lvl[k] + noise(a)), -3, 3);
+    const sym = (k, a = 0.8) => clamp(Math.round(Math.max(0, lvl[k] + noise(a) - 0.1)), 0, 3);
+    out[d] = {
+      mood: lv('mood'), energy: lv('energy'),
+      sleep: clamp(Math.round((7.5 + lvl.sleep + weekend + noise(1.4)) * 2) / 2, 2.5, 12),
+      irrit: sym('irrit'), anxiety: sym('anxiety'), thoughts: sym('thoughts'), impuls: sym('impuls'),
+      focus: sym('focus'), stress: sym('stress'),
+      meds: rnd() > (inLow ? 0.2 : 0.06), note: NOTES[i] || '',
+    };
   }
   return out;
 }
@@ -769,14 +792,25 @@ async function askPersist() {
 }
 
 /* ---------- démarrage ---------- */
+if (DEMO) {
+  entries = demoYear();
+  settings.symptoms = ['irrit', 'anxiety', 'thoughts', 'impuls', 'focus', 'stress'];
+  document.title = 'Bip – démo';
+  const bar = document.createElement('div');
+  bar.className = 'demo-bar';
+  bar.innerHTML = '<b>Mode démo</b> · 1 an de données fictives, rien n\'est enregistré. <a href="./">Retour à mon suivi</a>';
+  document.body.prepend(bar);
+  $('#d-wipe').hidden = true; $('#d-import').closest('label').hidden = true;
+}
 renderSymptomInputs();
-renderInstall();
+if (!DEMO) renderInstall();
 askPersist();
 fillSettings();
 fillForm(today());
 renderStatus();
 let startTab = 'today';
 try { startTab = sessionStorage.getItem('bip.tab') || 'today'; } catch (e) {}
+if (DEMO) { $('[data-range="365"]').click(); startTab = 'history'; }
 showTab(startTab);
 window.addEventListener('focus', () => { if (F.date.max !== today()) { fillForm(today()); renderStatus(); } });
 
