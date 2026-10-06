@@ -50,7 +50,13 @@ Le choix se fait dans *Réglages*, idéalement avec son psychiatre.
 Tout est stocké dans le navigateur (`localStorage`) de l'appareil : pas de compte, pas de serveur,
 pas de base de données. Une *Content-Security-Policy* (`connect-src 'none'`) empêche la page
 d'envoyer la moindre requête réseau, et aucune ressource externe (police, script, statistiques) n'est chargée.
-Export JSON (sauvegarde) et CSV (à montrer au psychiatre) dans *Réglages*.
+Dans *Réglages* :
+- **Sauvegarder (.json)** : relevés + réglages. Sur mobile, passe par le menu Partager
+  (Enregistrer dans Fichiers, iCloud/Google Drive, mail à soi-même). Rappel affiché après 30 jours sans sauvegarde.
+- **Importer** : aperçu du fichier (nombre de relevés, dates, doublons), puis *Fusionner* ou *Remplacer tout*.
+  Chaque relevé est vérifié ; les lignes illisibles sont ignorées. Sert aussi à changer de téléphone.
+- **Exporter pour le psychiatre (.csv)** : tableau lisible dans Excel / Numbers.
+- **Démo** : `./?demo` affiche un an de données fictives, en mémoire uniquement (le vrai suivi n'est pas touché).
 
 ## Lancer
 

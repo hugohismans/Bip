@@ -74,6 +74,7 @@
     <div id="crisis" class="card crisis" hidden></div>
     <div id="status" class="card"></div>
     <div id="alerts"></div>
+    <div id="backup-nudge"></div>
   </section>
 
   <!-- ============ HISTORIQUE ============ -->
@@ -145,13 +146,16 @@
       <h2>Mes données</h2>
       <p class="muted">Tout reste sur cet appareil, dans le stockage du navigateur : pas de compte, pas de serveur, pas de base de données. La page est verrouillée pour ne pouvoir envoyer aucune requête sur internet. Pensez à exporter régulièrement une sauvegarde.</p>
       <p id="d-persist" class="muted small"></p>
+      <p id="d-last" class="small"></p>
       <div class="btns">
-        <button id="d-export">Exporter (sauvegarde .json)</button>
+        <button id="d-export">💾 Sauvegarder (.json)</button>
+        <label class="btn">📂 Importer une sauvegarde<input type="file" id="d-import" accept="application/json,.json,text/plain" hidden></label>
         <button id="d-csv">Exporter pour le psychiatre (.csv)</button>
-        <label class="btn">Importer une sauvegarde<input type="file" id="d-import" accept="application/json,.json" hidden></label>
         <a class="btn" href="./?demo">Voir une démo (1 an de données fictives)</a>
         <button id="d-wipe" class="danger">Tout effacer</button>
       </div>
+      <div id="d-import-panel" class="import-panel" hidden></div>
+      <p class="muted small">La sauvegarde contient vos relevés et vos réglages (curseurs, contacts). Gardez-la dans un endroit à vous : Fichiers / iCloud Drive, Google Drive, ou un mail à vous-même. Elle sert aussi à passer d'un téléphone à l'autre.</p>
     </div>
 
     <div class="card">

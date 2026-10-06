@@ -202,3 +202,11 @@ main { padding-bottom: max(48px, env(safe-area-inset-bottom)); padding-left: max
 .demo-bar { background: #5b34b8; color: #fff; font-size: 14px; padding: 8px 16px; text-align: center; padding-top: max(8px, env(safe-area-inset-top)); }
 .demo-bar a { color: #fff; font-weight: 600; margin-left: 4px; }
 a.btn { text-decoration: none; }
+
+/* Sauvegarde / import */
+.import-panel { margin-top: 12px; padding: 12px; border: 1px solid var(--text-2); border-radius: 10px; background: var(--bg); }
+.import-panel p { margin: 0 0 8px; }
+.import-panel .btns { margin-bottom: 8px; }
+button.primary-sm { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.backup { display: flex; flex-direction: column; gap: 10px; }
+.backup button { align-self: flex-start; }

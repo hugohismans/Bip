@@ -352,6 +352,7 @@ function contactLinks(who) {
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 function renderStatus() {
+  renderBackupInfo();
   const a = analyze();
   const status = $('#status'), alertsEl = $('#alerts'), crisis = $('#crisis');
   if (!a) {
@@ -641,11 +642,42 @@ function download(name, text, type) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type }));
   a.download = name; document.body.appendChild(a); a.click();
-  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
 }
-$('#d-export').addEventListener('click', () => {
-  download(`bip-sauvegarde-${today()}.json`, JSON.stringify({ app: 'bip', version: 1, settings, entries }, null, 2), 'application/json');
-});
+
+/* Sur mobile : menu Partager du système (Enregistrer dans Fichiers, Drive, mail…).
+   Ailleurs, ou si le partage de fichiers n'existe pas : téléchargement classique. */
+async function saveFile(name, text, type) {
+  if ((isIOS || isAndroid) && navigator.canShare) {
+    const file = new File([text], name, { type });
+    if (navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: name }); return true; }
+      catch (e) { if (e.name === 'AbortError') return false; }
+    }
+  }
+  download(name, text, type);
+  return true;
+}
+
+const KEY_BACKUP = 'bip.lastBackup.v1';
+function lastBackup() { return load(KEY_BACKUP, null); }
+function renderBackupInfo() {
+  const lb = lastBackup(), n = Object.keys(entries).length;
+  $('#d-last').innerHTML = `${n} relevé${n > 1 ? 's' : ''} sur cet appareil · dernière sauvegarde : <b>${lb ? (lb === today() ? "aujourd'hui" : fmtShort(lb) + ` (il y a ${diffDays(today(), lb)} j)`) : 'jamais'}</b>`;
+  const nudge = $('#backup-nudge');
+  const due = !DEMO && n >= 14 && (!lb || diffDays(today(), lb) > 30);
+  nudge.innerHTML = due ? `<div class="card backup"><p class="small" style="margin:0">💾 ${lb ? `Dernière sauvegarde il y a ${diffDays(today(), lb)} jours.` : 'Vous n\'avez jamais sauvegardé vos relevés.'} Si le téléphone est perdu ou le navigateur vidé, ils seraient perdus.</p>
+    <button type="button" data-backup>Sauvegarder maintenant</button></div>` : '';
+}
+
+async function exportBackup() {
+  const payload = { app: 'bip', version: 1, exportedAt: new Date().toISOString(), settings, entries };
+  const ok = await saveFile(`bip-sauvegarde-${today()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+  if (ok) { save(KEY_BACKUP, today()); renderBackupInfo(); flash('#s-toast', 'Sauvegarde créée ✓'); }
+}
+$('#d-export').addEventListener('click', exportBackup);
+document.addEventListener('click', ev => { if (ev.target.closest('[data-backup]')) exportBackup(); });
+
 $('#d-csv').addEventListener('click', () => {
   const rows = [['date', 'humeur', 'energie', 'sommeil_h', ...SYMPTOMS.map(x => x.key), 'traitement_pris', 'indice', 'moyenne_7j', 'note']];
   for (const d of Object.keys(entries).sort()) {
@@ -653,26 +685,77 @@ $('#d-csv').addEventListener('click', () => {
     rows.push([d, e.mood, e.energy, e.sleep, ...SYMPTOMS.map(x => e[x.key] === undefined ? '' : e[x.key]), e.meds ? 'oui' : 'non', dayIndex(e), w.n >= 3 ? w.avg.toFixed(2) : '', e.note || '']);
   }
   const csv = rows.map(r => r.map(c => /[",;\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : c).join(';')).join('\n');
-  download(`bip-humeur-${today()}.csv`, '﻿' + csv, 'text/csv');
+  saveFile(`bip-humeur-${today()}.csv`, '﻿' + csv, 'text/csv');
 });
+
+/* Vérifie et nettoie un relevé venant d'un fichier ; null s'il est inutilisable */
+function cleanEntry(e) {
+  if (!e || typeof e !== 'object') return null;
+  const num = v => (typeof v === 'number' && isFinite(v) ? v : NaN);
+  const mood = num(e.mood), energy = num(e.energy), sleep = num(e.sleep);
+  if ([mood, energy, sleep].some(isNaN)) return null;
+  const out = {
+    mood: clamp(Math.round(mood), -3, 3), energy: clamp(Math.round(energy), -3, 3),
+    sleep: clamp(Math.round(sleep * 2) / 2, 0, 14),
+    meds: !!e.meds, note: typeof e.note === 'string' ? e.note.slice(0, 280) : '',
+  };
+  for (const x of SYMPTOMS) if (!isNaN(num(e[x.key]))) out[x.key] = clamp(Math.round(e[x.key]), 0, 3);
+  return out;
+}
+
+let pendingImport = null;
 $('#d-import').addEventListener('change', async ev => {
-  const file = ev.target.files[0]; if (!file) return;
+  const file = ev.target.files[0]; ev.target.value = '';
+  if (!file) return;
+  const panel = $('#d-import-panel');
   try {
     const data = JSON.parse(await file.text());
     if (!data || typeof data.entries !== 'object') throw new Error('format');
-    let n = 0;
+    const clean = {}; let bad = 0;
     for (const [d, e] of Object.entries(data.entries)) {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(d) && e && typeof e.mood === 'number') { entries[d] = e; n++; }
+      const c = /^\d{4}-\d{2}-\d{2}$/.test(d) ? cleanEntry(e) : null;
+      if (c) clean[d] = c; else bad++;
     }
-    if (data.settings) settings = normSettings(data.settings);
+    const dates = Object.keys(clean).sort();
+    if (!dates.length) throw new Error('vide');
+    const dup = dates.filter(d => entries[d]).length;
+    pendingImport = { entries: clean, settings: data.settings && typeof data.settings === 'object' ? data.settings : null };
+    panel.innerHTML = `
+      <p class="small"><b>${esc(file.name)}</b><br>${dates.length} relevé${dates.length > 1 ? 's' : ''} du ${fmtShort(dates[0])} ${fromStr(dates[0]).getFullYear()} au ${fmtShort(dates[dates.length - 1])} ${fromStr(dates[dates.length - 1]).getFullYear()}` +
+      (bad ? ` · ${bad} ligne(s) illisible(s) ignorée(s)` : '') + `.<br>Sur cet appareil : ${Object.keys(entries).length} relevé(s)` + (dup ? `, dont ${dup} jour(s) aussi présents dans le fichier.` : '.') + `</p>
+      <div class="btns">
+        <button type="button" class="primary-sm" data-imp="merge">Fusionner</button>
+        <button type="button" data-imp="replace">Remplacer tout</button>
+        <button type="button" data-imp="cancel">Annuler</button>
+      </div>
+      <p class="muted small"><b>Fusionner</b> ajoute les jours du fichier à ceux de l'appareil (pour un jour présent des deux côtés, le fichier l'emporte) et garde vos réglages actuels. <b>Remplacer tout</b> efface l'appareil et reprend exactement la sauvegarde, réglages compris.</p>`;
+    panel.hidden = false;
+  } catch (e) {
+    pendingImport = null;
+    panel.innerHTML = '<p class="small">Ce fichier n\'est pas une sauvegarde Bip lisible.</p><div class="btns"><button type="button" data-imp="cancel">OK</button></div>';
+    panel.hidden = false;
+  }
+});
+$('#d-import-panel').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-imp]'); if (!b) return;
+  const panel = $('#d-import-panel');
+  if (b.dataset.imp !== 'cancel' && pendingImport) {
+    const n = Object.keys(pendingImport.entries).length;
+    if (b.dataset.imp === 'replace') {
+      if (!confirm(`Effacer les ${Object.keys(entries).length} relevé(s) de cet appareil et les remplacer par la sauvegarde ?`)) return;
+      entries = pendingImport.entries;
+      if (pendingImport.settings) settings = normSettings(pendingImport.settings);
+    } else {
+      Object.assign(entries, pendingImport.entries);
+    }
     save(KEY_ENTRIES, entries); save(KEY_SETTINGS, settings);
     fillSettings(); renderSymptomInputs(); fillForm(today()); renderStatus();
-    alert(`${n} relevé(s) importé(s).`);
-  } catch (e) { alert('Fichier non reconnu.'); }
-  ev.target.value = '';
+    flash('#s-toast', `${n} relevé(s) importé(s) ✓`);
+  }
+  pendingImport = null; panel.hidden = true; panel.innerHTML = '';
 });
 $('#d-wipe').addEventListener('click', () => {
-  if (!confirm('Effacer définitivement tous vos relevés sur cet appareil ?')) return;
+  if (!confirm('Effacer définitivement tous vos relevés sur cet appareil ?\n\nSi vous n\'avez pas de sauvegarde, annulez et touchez d\'abord « Sauvegarder ».')) return;
   entries = {}; save(KEY_ENTRIES, entries); fillForm(today()); renderStatus();
 });
 /* Un an fictif, profil type 2 : épisodes dépressifs longs, hypomanies courtes,
