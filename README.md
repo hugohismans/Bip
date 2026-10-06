@@ -3,8 +3,22 @@
 Petit site pour suivre son humeur au quotidien quand on vit avec un trouble bipolaire
 (pensé en particulier pour le **type 2**, où la phase haute est difficile à repérer soi-même).
 
-**5 secondes par soir** : 4 curseurs (humeur, énergie, sommeil, irritabilité), on enregistre.
-Les curseurs reprennent les valeurs de la veille, on ne touche que ce qui a changé.
+**5 secondes par soir** : humeur, énergie, sommeil + quelques symptômes de 0 à 3, on enregistre.
+Les valeurs de la veille sont reprises, on ne touche que ce qui a changé.
+
+## Les curseurs
+
+| Curseur | Échelle | Pourquoi |
+|---|---|---|
+| Humeur | −3 … +3 | base de la NIMH Life Chart Method et de MONARCA |
+| Énergie / activité | −3 … +3 | l'activité augmente souvent avant l'humeur en phase haute |
+| Sommeil | heures | le besoin de sommeil réduit est le signe précoce le plus fiable |
+| Irritabilité *(conseillé)* | 0 … 3 | phase haute, phase basse et états mixtes |
+| Anxiété *(conseillé)* | 0 … 3 | fréquente, marqueur des états mixtes |
+| Pensées rapides *(conseillé)* | 0 … 3 | signe le plus spécifique de l'hypomanie (type 2) |
+| Impulsivité, concentration, stress, alcool | 0 … 3 | optionnels, à activer dans *Réglages* |
+
+Le choix se fait dans *Réglages*, idéalement avec son psychiatre.
 
 ## Ce que l'app calcule
 
@@ -33,12 +47,23 @@ Les curseurs reprennent les valeurs de la veille, on ne touche que ce qui a chan
 
 ## Données et vie privée
 
-Tout est stocké dans le navigateur (`localStorage`) de l'appareil. Rien n'est envoyé.
+Tout est stocké dans le navigateur (`localStorage`) de l'appareil : pas de compte, pas de serveur,
+pas de base de données. Une *Content-Security-Policy* (`connect-src 'none'`) empêche la page
+d'envoyer la moindre requête réseau, et aucune ressource externe (police, script, statistiques) n'est chargée.
 Export JSON (sauvegarde) et CSV (à montrer au psychiatre) dans *Réglages*.
 
 ## Lancer
 
-Site statique, aucun build : ouvrir `index.html`, ou servir le dossier
-(`python3 -m http.server`) / publier via GitHub Pages. Installable sur l'écran d'accueil.
+Site statique, aucun build : servir le dossier (`python3 -m http.server`) ou publier via GitHub Pages
+(HTTPS nécessaire pour l'installation et le mode hors ligne).
+
+## Installer sur mobile (PWA)
+
+- **iPhone / iPad** : Safari → bouton *Partager* → *Sur l'écran d'accueil*. L'app affiche ces instructions
+  au premier lancement. À faire avant de commencer : sur iOS, l'app installée a son propre stockage, séparé
+  de Safari (on peut transférer avec export / import).
+- **Android** : Chrome propose *Installer l'application* ; Bip affiche aussi un bouton *Installer*.
+
+Une fois installée, Bip s'ouvre en plein écran et fonctionne hors connexion (service worker).
 
 > Bip n'est pas un outil de diagnostic et ne remplace pas l'avis d'un psychiatre.

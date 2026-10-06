@@ -5,9 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Bip – Humeur du jour</title>
 <meta name="description" content="Suivi quotidien de l'humeur pour la bipolarité, en 5 secondes par jour.">
-<meta name="theme-color" content="#fcfcfb">
+<!-- Verrou de confidentialité : la page ne peut charger que ses propres fichiers
+     et ne peut envoyer aucune requête réseau (connect-src 'none'). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#f4f3f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111110" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Bip">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,6 +33,7 @@
 <main>
   <!-- ============ AUJOURD'HUI ============ -->
   <section id="tab-today" class="tab">
+    <div id="install" class="card install" hidden></div>
     <form id="entry" class="card" autocomplete="off">
       <div class="row-date">
         <label for="f-date">Jour</label>
@@ -48,11 +59,7 @@
         <div class="ticks"><span>0 h</span><span>7 h</span><span>14 h</span></div>
       </div>
 
-      <div class="slider" data-key="irrit">
-        <div class="slider-head"><label for="f-irrit">Irritabilité / agitation</label><output id="o-irrit"></output></div>
-        <input type="range" id="f-irrit" min="0" max="3" step="1">
-        <div class="ticks"><span>aucune</span><span></span><span>forte</span></div>
-      </div>
+      <div id="symptoms"></div>
 
       <details class="more">
         <summary>+ Note, traitement (facultatif)</summary>
@@ -93,15 +100,23 @@
       <p class="legend"><span class="lg lg-bar"></span>nuit <span class="lg lg-high"></span>≥ 2 h de moins <span class="lg lg-low"></span>≥ 2 h de plus <span class="lg lg-base"></span>sommeil habituel</p>
       <div class="chart" id="chart-sleep"></div>
     </div>
+    <div class="card" id="card-symptoms">
+      <h2>Symptômes</h2>
+      <p class="legend"><span class="lg lg-s1"></span>un peu <span class="lg lg-s2"></span>nettement <span class="lg lg-s3"></span>beaucoup</p>
+      <div class="chart" id="chart-symptoms"></div>
+    </div>
     <div class="card">
       <h2>Journal</h2>
-      <div class="table-wrap"><table id="log"><thead><tr><th>Jour</th><th>Hum.</th><th>Én.</th><th>Som.</th><th>Irr.</th><th>Indice</th><th>Note</th></tr></thead><tbody></tbody></table></div>
+      <div class="table-wrap"><table id="log"><thead><tr><th>Jour</th><th>Hum.</th><th>Én.</th><th>Som.</th><th>Indice</th><th>Symptômes</th><th>Note</th></tr></thead><tbody></tbody></table></div>
     </div>
   </section>
 
   <!-- ============ RÉGLAGES ============ -->
   <section id="tab-settings" class="tab" hidden>
     <form id="settings" class="card">
+      <h2>Mes curseurs</h2>
+      <p class="muted small" style="margin:0 0 6px">Humeur, énergie et sommeil sont toujours là. Choisissez les autres avec votre psychiatre, idéalement ceux qu'elle ou il vous demande en consultation. Moins il y en a, plus c'est rapide.</p>
+      <div id="s-symptoms" class="sym-list"></div>
       <h2>Mes repères</h2>
       <label>Sommeil habituel (quand je vais bien)
         <span class="inline"><input type="number" id="s-baseline" min="4" max="12" step="0.5"> h</span>
@@ -118,9 +133,18 @@
       <p id="s-toast" class="toast" role="status" aria-live="polite"></p>
     </form>
 
+    <div class="card" id="install-help">
+      <h2>Installer l'app sur le téléphone</h2>
+      <div id="install-state" class="small"></div>
+      <p class="small"><b>iPhone / iPad</b> : ouvrez ce site dans Safari, touchez le bouton <b>Partager</b> <span aria-hidden="true">(carré avec une flèche ↑)</span>, puis <b>« Sur l'écran d'accueil »</b> et <b>Ajouter</b>.</p>
+      <p class="small"><b>Android</b> : dans Chrome, touchez <b>⋮</b> puis <b>« Installer l'application »</b> (ou « Ajouter à l'écran d'accueil »).</p>
+      <p class="muted small">Installez-la <b>avant</b> de commencer le suivi : sur iPhone, l'app installée et Safari ont chacun leur propre stockage. Une fois installée, Bip fonctionne aussi hors connexion.</p>
+    </div>
+
     <div class="card">
       <h2>Mes données</h2>
-      <p class="muted">Tout reste sur cet appareil (stockage du navigateur). Rien n'est envoyé sur internet. Pensez à exporter régulièrement une sauvegarde.</p>
+      <p class="muted">Tout reste sur cet appareil, dans le stockage du navigateur : pas de compte, pas de serveur, pas de base de données. La page est verrouillée pour ne pouvoir envoyer aucune requête sur internet. Pensez à exporter régulièrement une sauvegarde.</p>
+      <p id="d-persist" class="muted small"></p>
       <div class="btns">
         <button id="d-export">Exporter (sauvegarde .json)</button>
         <button id="d-csv">Exporter pour le psychiatre (.csv)</button>
@@ -136,7 +160,8 @@
         <li><b>Indice du jour</b> (−3 à +3) = 50 % humeur + 30 % énergie + 20 % écart de sommeil (dormir 1 h de moins que d'habitude compte +1, dormir plus compte −1). Inspiré de la <i>NIMH Life Chart Method</i> et des échelles de l'étude MONARCA.</li>
         <li><b>Phase</b> : moyenne des 7 derniers jours notés. ≥ +1 haute, ≥ +0,5 tendance haute, ≤ −0,5 tendance basse, ≤ −1 basse.</li>
         <li><b>Direction</b> : pente de la droite de tendance sur 7 jours.</li>
-        <li><b>Alertes</b> : 4 jours d'affilée en zone haute (durée d'un épisode hypomaniaque), sommeil réduit de 2 h ou plus avec énergie haute (signe précoce le plus fiable), signes mixtes (humeur basse + agitation), 7 et 14 jours en zone basse, changement brutal.</li>
+        <li><b>Symptômes</b> (0 à 3) : ils ne changent pas l'indice, pour qu'il reste comparable même si vous changez vos curseurs, mais ils déclenchent des alertes.</li>
+        <li><b>Alertes</b> : 4 jours d'affilée en zone haute (durée d'un épisode hypomaniaque), sommeil réduit de 2 h ou plus avec énergie haute (signe précoce le plus fiable), pensées rapides ou impulsivité répétées, signes mixtes (humeur basse + agitation, irritabilité, anxiété ou pensées rapides), 7 et 14 jours en zone basse, changement brutal.</li>
       </ul>
       <p class="muted small"><b>Bip n'est pas un outil de diagnostic</b> et ne remplace pas l'avis de votre psychiatre. Il aide à repérer des tendances et à en parler.</p>
     </div>

@@ -8,16 +8,33 @@
 const KEY_ENTRIES = 'bip.entries.v1';
 const KEY_SETTINGS = 'bip.settings.v1';
 
+const LEVELS = ['non', 'un peu', 'nettement', 'beaucoup'];
+
+/* Symptômes notés de 0 à 3. Humeur, énergie et sommeil sont toujours présents.
+   'def' : activé par défaut (choix pensé pour le type 2). */
+const SYMPTOMS = [
+  { key: 'irrit', short: 'Irr.', label: 'Irritabilité', hint: 'agacement, impatience, colère', def: true },
+  { key: 'anxiety', short: 'Anx.', label: 'Anxiété', hint: 'inquiétude, tension, nervosité', def: true },
+  { key: 'thoughts', short: 'Pens.', label: 'Pensées rapides', hint: 'idées qui fusent, parler beaucoup, plein de projets', def: true },
+  { key: 'impuls', short: 'Imp.', label: 'Impulsivité', hint: 'dépenses, prises de risque, décisions sur un coup de tête', def: false },
+  { key: 'focus', short: 'Conc.', label: 'Difficulté à se concentrer', hint: 'lire, suivre une conversation, travailler', def: false },
+  { key: 'stress', short: 'Stress', label: 'Stress / événement', hint: 'conflit, deadline, deuil, voyage…', def: false },
+  { key: 'alcohol', short: 'Alc.', label: 'Alcool / substances', hint: 'plus que d\'habitude', def: false },
+];
+const SYM = Object.fromEntries(SYMPTOMS.map(x => [x.key, x]));
+const sv = (e, k) => e[k] || 0;
+function symLabel(k, v) { return `${SYM[k].label.toLowerCase()} ${LEVELS[v]}`; }
+
 const DEFAULT_SETTINGS = {
   baseline: 7.5,
   psyName: '', psyTel: '',
   famName: '', famTel: '',
   remind: false, remindTime: '21:00',
+  symptoms: SYMPTOMS.filter(x => x.def).map(x => x.key),
 };
 
 const MOOD_LABELS = { '-3': 'très basse', '-2': 'basse', '-1': 'un peu basse', '0': 'neutre', '1': 'un peu haute', '2': 'haute', '3': 'très haute' };
 const ENERGY_LABELS = { '-3': 'à plat', '-2': 'basse', '-1': 'un peu basse', '0': 'normale', '1': 'un peu haute', '2': 'haute', '3': 'survolté·e' };
-const IRRIT_LABELS = { '0': 'aucune', '1': 'légère', '2': 'nette', '3': 'forte' };
 
 /* ---------- stockage ---------- */
 function load(key, fallback) {
@@ -32,7 +49,12 @@ function save(key, value) {
 }
 
 let entries = load(KEY_ENTRIES, {});
-let settings = Object.assign({}, DEFAULT_SETTINGS, load(KEY_SETTINGS, {}));
+let settings = normSettings(load(KEY_SETTINGS, {}));
+function normSettings(o) {
+  const st = Object.assign({}, DEFAULT_SETTINGS, o);
+  st.symptoms = Array.isArray(st.symptoms) ? st.symptoms.filter(k => SYM[k]) : DEFAULT_SETTINGS.symptoms.slice();
+  return st;
+}
 
 /* ---------- dates (format AAAA-MM-JJ, heure locale) ---------- */
 function toStr(d) {
@@ -150,10 +172,25 @@ function analyze() {
         who: moodUp ? ['psy', 'fam'] : ['psy'] });
     }
 
-    const mixedDays = recent3.filter(e => e.mood <= -1 && (e.energy >= 1 || e.irrit >= 2));
+    const accelDays = recent3.filter(e => sv(e, 'thoughts') >= 2 || sv(e, 'impuls') >= 2);
+    if (accelDays.length >= 2) {
+      const withHigh = accelDays.some(e => dayIndex(e) >= 1 || e.sleep <= base - 2);
+      alerts.push({ level: withHigh ? 'crit' : 'warn', title: 'Pensées qui accélèrent',
+        text: `${accelDays.length} jours sur 3 avec des pensées rapides ou de l'impulsivité nettes. C'est un signe typique de phase haute, souvent vécu comme agréable.` +
+          (withHigh ? ' Avec une humeur haute ou moins de sommeil, appelez votre psychiatre.' : ' Si ça se confirme, parlez-en à votre psychiatre.'),
+        who: withHigh ? ['psy', 'fam'] : ['psy'] });
+    }
+    if (recent3.some(e => sv(e, 'impuls') >= 3)) {
+      alerts.push({ level: 'warn', title: 'Impulsivité forte',
+        text: 'Règle des 48 h : reportez les grosses dépenses, achats en ligne et décisions importantes. Vous pouvez demander à un proche de garder votre carte bancaire quelques jours.',
+        who: ['fam'] });
+    }
+
+    const mixedDays = recent3.filter(e => e.mood <= -1 &&
+      (e.energy >= 1 || sv(e, 'irrit') >= 2 || sv(e, 'anxiety') >= 2 || sv(e, 'thoughts') >= 2));
     if (mixedDays.length >= 2) {
       alerts.push({ level: 'crit', title: 'Signes mixtes',
-        text: "Humeur basse combinée à de l'agitation ou de l'irritabilité plusieurs jours de suite. Les états mixtes sont plus à risque : contactez votre psychiatre rapidement et ne restez pas seul·e avec ça.",
+        text: "Humeur basse combinée à de l'agitation, de l'irritabilité, de l'anxiété ou des pensées rapides plusieurs jours de suite. Les états mixtes sont plus à risque : contactez votre psychiatre rapidement et ne restez pas seul·e avec ça.",
         who: ['psy', 'fam'] });
     }
 
@@ -171,11 +208,17 @@ function analyze() {
         who: [] });
     }
 
-    const irritDays = recent7.filter(e => e.irrit >= 2).length;
+    const irritDays = recent7.filter(e => sv(e, 'irrit') >= 2).length;
     if (irritDays >= 3 && !mixedDays.length) {
       alerts.push({ level: 'warn', title: 'Irritabilité fréquente',
         text: `${irritDays} jours sur les 7 derniers avec une irritabilité nette. Elle peut accompagner une phase haute comme une phase basse : notez-le pour votre prochain rendez-vous.`,
         who: [] });
+    }
+    const anxDays = recent7.filter(e => sv(e, 'anxiety') >= 2).length;
+    if (anxDays >= 4 && !mixedDays.length) {
+      alerts.push({ level: 'warn', title: 'Anxiété persistante',
+        text: `${anxDays} jours sur les 7 derniers avec une anxiété nette. Parlez-en à votre psychiatre : elle peut précéder un changement de phase et se soigne.`,
+        who: ['psy'] });
     }
 
     const a3 = avgWindow(last, 3), before = avgWindow(addDays(last, -3), 7);
@@ -207,7 +250,7 @@ $$('.tabs button').forEach(b => b.addEventListener('click', () => showTab(b.data
 
 /* ---------- UI : saisie ---------- */
 const F = {
-  date: $('#f-date'), mood: $('#f-mood'), energy: $('#f-energy'), sleep: $('#f-sleep'), irrit: $('#f-irrit'),
+  date: $('#f-date'), mood: $('#f-mood'), energy: $('#f-energy'), sleep: $('#f-sleep'),
   meds: $('#f-meds'), note: $('#f-note'),
 };
 
@@ -216,17 +259,41 @@ function updateOutputs() {
   $('#o-energy').textContent = `${fmtNum(+F.energy.value, 0).replace('+0', '0')} · ${ENERGY_LABELS[F.energy.value]}`;
   const diff = +F.sleep.value - settings.baseline;
   $('#o-sleep').textContent = fmtH(+F.sleep.value) + (Math.abs(diff) >= 1 ? ` (${diff > 0 ? '+' : '−'}${fmtH(Math.abs(diff))})` : '');
-  $('#o-irrit').textContent = IRRIT_LABELS[F.irrit.value];
 }
-['mood', 'energy', 'sleep', 'irrit'].forEach(k => F[k].addEventListener('input', updateOutputs));
+['mood', 'energy', 'sleep'].forEach(k => F[k].addEventListener('input', updateOutputs));
+
+/* Symptômes : 4 boutons (0..3) par ligne, plus rapides qu'un curseur au pouce */
+let symVals = {};
+function renderSymptomInputs() {
+  $('#symptoms').innerHTML = settings.symptoms.map(k => `
+    <div class="sym" role="radiogroup" aria-label="${esc(SYM[k].label)}">
+      <div class="sym-head"><span class="sym-label">${esc(SYM[k].label)}</span><span class="sym-val" id="sv-${k}"></span></div>
+      <div class="chips">${LEVELS.map((l, v) =>
+        `<button type="button" role="radio" data-sym="${k}" data-v="${v}" aria-label="${esc(l)}">${v === 0 ? '0' : v}</button>`).join('')}</div>
+    </div>`).join('');
+  paintSymptoms();
+}
+function paintSymptoms() {
+  for (const k of settings.symptoms) {
+    const v = symVals[k] || 0;
+    $$(`[data-sym="${k}"]`).forEach(b => b.setAttribute('aria-checked', String(+b.dataset.v === v)));
+    const o = $('#sv-' + k); if (o) o.textContent = LEVELS[v];
+  }
+}
+$('#symptoms').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-sym]'); if (!b) return;
+  symVals[b.dataset.sym] = +b.dataset.v; paintSymptoms();
+});
 
 function fillForm(date) {
   F.date.value = date;
   const e = entries[date];
   // Pas encore noté : on part de la dernière saisie pour aller plus vite
   const prev = Object.keys(entries).filter(d => d < date).sort().pop();
-  const src = e || (prev ? entries[prev] : { mood: 0, energy: 0, sleep: settings.baseline, irrit: 0, meds: false });
-  F.mood.value = src.mood; F.energy.value = src.energy; F.sleep.value = src.sleep; F.irrit.value = src.irrit;
+  const src = e || (prev ? entries[prev] : { mood: 0, energy: 0, sleep: settings.baseline, meds: false });
+  F.mood.value = src.mood; F.energy.value = src.energy; F.sleep.value = src.sleep;
+  symVals = {}; for (const k of settings.symptoms) symVals[k] = sv(src, k);
+  paintSymptoms();
   F.meds.checked = !!src.meds;
   F.note.value = e ? (e.note || '') : '';
   $('#f-saved').hidden = !e;
@@ -241,9 +308,13 @@ $('#entry').addEventListener('submit', ev => {
   const date = F.date.value;
   if (!date || date > today()) { flash('#f-toast', 'Choisissez un jour passé ou aujourd\'hui.'); return; }
   entries[date] = {
-    mood: +F.mood.value, energy: +F.energy.value, sleep: +F.sleep.value, irrit: +F.irrit.value,
+    mood: +F.mood.value, energy: +F.energy.value, sleep: +F.sleep.value,
     meds: F.meds.checked, note: F.note.value.trim(),
   };
+  // on garde les symptômes déjà notés ce jour-là même s'ils ont été désactivés depuis
+  const old = entries[date] || {};
+  for (const x of SYMPTOMS) if (old[x.key] !== undefined) entries[date][x.key] = old[x.key];
+  for (const k of settings.symptoms) entries[date][k] = symVals[k] || 0;
   const ok = save(KEY_ENTRIES, entries);
   flash('#f-toast', ok ? `Noté pour ${date === today() ? "aujourd'hui" : fmtShort(date)} ✓` : 'Impossible d\'enregistrer (stockage du navigateur indisponible).');
   fillForm(date);
@@ -352,7 +423,47 @@ function renderHistory() {
   const any = days.some(d => entries[d]);
   drawMood(days, any);
   drawSleep(days, any);
+  drawSymptoms(days, any);
   renderTable();
+}
+
+function symSummary(e) {
+  return SYMPTOMS.filter(x => sv(e, x.key) > 0).map(x => symLabel(x.key, e[x.key])).join(' · ');
+}
+
+/* Carte de chaleur : une ligne par symptôme, une case par jour (une seule teinte, plus foncé = plus fort) */
+function drawSymptoms(days, any) {
+  const box = $('#chart-symptoms');
+  const keys = SYMPTOMS.map(x => x.key).filter(k => settings.symptoms.includes(k) || days.some(d => entries[d] && entries[d][k] !== undefined));
+  $('#card-symptoms').hidden = !keys.length;
+  if (!keys.length) return;
+  if (!any) { box.innerHTML = '<p class="empty">Pas encore de données sur cette période.</p>'; return; }
+  const W0 = Math.max(280, Math.round(box.clientWidth || 680));
+  const labelW = Math.min(150, Math.round(W0 * 0.32)), rowH = 22;
+  box.innerHTML = '';
+  const H = keys.length * rowH + 30;
+  const svg = el('svg', { viewBox: `0 0 ${W0} ${H}`, role: 'img', 'aria-label': 'Intensité des symptômes par jour' }, box);
+  const m = { l: labelW, r: 6, t: 4, b: 24 }, iw = W0 - m.l - m.r, n = days.length, slot = iw / n;
+  const x = i => m.l + slot * (i + 0.5);
+  const gap = slot > 4 ? 1 : 0;
+  const op = [0, 0.28, 0.58, 1];
+  keys.forEach((k, r) => {
+    const yy = m.t + r * rowH;
+    el('text', { x: 0, y: yy + rowH / 2 + 4 }, svg).textContent = SYM[k].label.length > 22 && labelW < 150 ? SYM[k].label.slice(0, 18) + '…' : SYM[k].label;
+    el('rect', { x: m.l, y: yy + 2, width: iw, height: rowH - 4, fill: 'var(--grid)', rx: 3 }, svg);
+    days.forEach((d, i) => {
+      const e = entries[d]; if (!e || !e[k]) return;
+      el('rect', { x: m.l + slot * i + gap / 2, y: yy + 2, width: Math.max(1, slot - gap), height: rowH - 4, fill: 'var(--sym)', 'fill-opacity': op[e[k]], rx: Math.min(2, slot / 3) }, svg);
+    });
+  });
+  for (const [i, s] of xTicks(days[0], n, iw + 30)) {
+    el('text', { x: x(i), y: H - 6, 'text-anchor': 'middle' }, svg).textContent = fmtShort(s);
+  }
+  attachHover(svg, box, W0, days, x, { l: m.l, t: m.t, b: m.b }, keys.length * rowH, i => {
+    const d = days[i], e = entries[d];
+    if (!e) return `<b>${fmtLong(d)}</b><br>pas de relevé`;
+    return `<b>${fmtLong(d)}</b><br>` + (keys.map(k => `${SYM[k].label} : <b>${e[k] === undefined ? '—' : LEVELS[e[k]]}</b>`).join('<br>'));
+  });
 }
 
 function chartFrame(container, H) {
@@ -407,7 +518,8 @@ function drawMood(days, any) {
     const avg = avgs[i];
     if (!e) return `<b>${fmtLong(d)}</b><br>pas de relevé` + (avg !== null ? `<br>moyenne 7 j : <b>${fmtNum(avg)}</b>` : '');
     return `<b>${fmtLong(d)}</b><br>indice <b>${fmtNum(dayIndex(e))}</b>` + (avg !== null ? ` · moy. 7 j <b>${fmtNum(avg)}</b>` : '') +
-      `<br>humeur ${MOOD_LABELS[e.mood]} · énergie ${ENERGY_LABELS[e.energy]}<br>sommeil ${fmtH(e.sleep)} · irritabilité ${IRRIT_LABELS[e.irrit]}` +
+      `<br>humeur ${MOOD_LABELS[e.mood]} · énergie ${ENERGY_LABELS[e.energy]}<br>sommeil ${fmtH(e.sleep)}` +
+      (symSummary(e) ? `<br>${symSummary(e)}` : '') +
       (e.note ? `<br><i>${esc(e.note)}</i>` : '');
   });
 }
@@ -477,8 +589,8 @@ function renderTable() {
   if (!dates.length) { tb.innerHTML = '<tr><td colspan="7" class="muted">Aucun relevé sur cette période.</td></tr>'; return; }
   tb.innerHTML = dates.map(d => {
     const e = entries[d], v = dayIndex(e);
-    return `<tr><td><button data-edit="${d}" title="Modifier">${fmtShort(d)}</button></td><td>${e.mood}</td><td>${e.energy}</td><td>${fmtH(e.sleep)}</td><td>${e.irrit}</td>
-      <td style="color:${idxColor(v)};font-weight:600">${fmtNum(v)}</td><td class="note">${esc(e.note || '')}</td></tr>`;
+    return `<tr><td><button data-edit="${d}" title="Modifier">${fmtShort(d)}</button></td><td>${e.mood}</td><td>${e.energy}</td><td>${fmtH(e.sleep)}</td>
+      <td style="color:${idxColor(v)};font-weight:600">${fmtNum(v)}</td><td>${SYMPTOMS.filter(x => sv(e, x.key) > 0).map(x => `${x.short} ${e[x.key]}`).join(' · ')}</td><td class="note">${esc(e.note || '')}</td></tr>`;
   }).join('');
 }
 $('#log').addEventListener('click', ev => {
@@ -496,6 +608,9 @@ function fillSettings() {
   S.psyName.value = settings.psyName; S.psyTel.value = settings.psyTel;
   S.famName.value = settings.famName; S.famTel.value = settings.famTel;
   S.remind.checked = settings.remind; S.remindTime.value = settings.remindTime;
+  $('#s-symptoms').innerHTML = SYMPTOMS.map(x => `
+    <label class="check sym-opt"><input type="checkbox" value="${x.key}" ${settings.symptoms.includes(x.key) ? 'checked' : ''}>
+      <span><b>${esc(x.label)}</b>${x.def ? ' <span class="pill">conseillé</span>' : ''}<br><span class="muted">${esc(x.hint)}</span></span></label>`).join('');
 }
 $('#settings').addEventListener('submit', async ev => {
   ev.preventDefault();
@@ -504,12 +619,13 @@ $('#settings').addEventListener('submit', async ev => {
     psyName: S.psyName.value.trim(), psyTel: S.psyTel.value.trim(),
     famName: S.famName.value.trim(), famTel: S.famTel.value.trim(),
     remind: S.remind.checked, remindTime: S.remindTime.value || '21:00',
+    symptoms: $$('#s-symptoms input:checked').map(i => i.value),
   };
   if (settings.remind && 'Notification' in window && Notification.permission === 'default') {
     try { await Notification.requestPermission(); } catch (e) {}
   }
   save(KEY_SETTINGS, settings);
-  fillSettings(); updateOutputs(); renderStatus();
+  fillSettings(); renderSymptomInputs(); fillForm(F.date.value || today()); renderStatus();
   flash('#s-toast', 'Réglages enregistrés ✓');
 });
 
@@ -524,10 +640,10 @@ $('#d-export').addEventListener('click', () => {
   download(`bip-sauvegarde-${today()}.json`, JSON.stringify({ app: 'bip', version: 1, settings, entries }, null, 2), 'application/json');
 });
 $('#d-csv').addEventListener('click', () => {
-  const rows = [['date', 'humeur', 'energie', 'sommeil_h', 'irritabilite', 'traitement_pris', 'indice', 'moyenne_7j', 'note']];
+  const rows = [['date', 'humeur', 'energie', 'sommeil_h', ...SYMPTOMS.map(x => x.key), 'traitement_pris', 'indice', 'moyenne_7j', 'note']];
   for (const d of Object.keys(entries).sort()) {
     const e = entries[d], w = avgWindow(d, 7);
-    rows.push([d, e.mood, e.energy, e.sleep, e.irrit, e.meds ? 'oui' : 'non', dayIndex(e), w.n >= 3 ? w.avg.toFixed(2) : '', e.note || '']);
+    rows.push([d, e.mood, e.energy, e.sleep, ...SYMPTOMS.map(x => e[x.key] === undefined ? '' : e[x.key]), e.meds ? 'oui' : 'non', dayIndex(e), w.n >= 3 ? w.avg.toFixed(2) : '', e.note || '']);
   }
   const csv = rows.map(r => r.map(c => /[",;\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : c).join(';')).join('\n');
   download(`bip-humeur-${today()}.csv`, '﻿' + csv, 'text/csv');
@@ -541,9 +657,9 @@ $('#d-import').addEventListener('change', async ev => {
     for (const [d, e] of Object.entries(data.entries)) {
       if (/^\d{4}-\d{2}-\d{2}$/.test(d) && e && typeof e.mood === 'number') { entries[d] = e; n++; }
     }
-    if (data.settings) settings = Object.assign({}, DEFAULT_SETTINGS, data.settings);
+    if (data.settings) settings = normSettings(data.settings);
     save(KEY_ENTRIES, entries); save(KEY_SETTINGS, settings);
-    fillSettings(); fillForm(today()); renderStatus();
+    fillSettings(); renderSymptomInputs(); fillForm(today()); renderStatus();
     alert(`${n} relevé(s) importé(s).`);
   } catch (e) { alert('Fichier non reconnu.'); }
   ev.target.value = '';
@@ -575,7 +691,9 @@ function demoData() {
     const energy = clamp(Math.round(level * 1.1) + noise(), -3, 3);
     const sleep = clamp(Math.round((7.5 - level * 1.2 + (rnd() - 0.5) * 1.5) * 2) / 2, 3, 12);
     const irrit = clamp(Math.round(Math.abs(level) * 0.6 + rnd() * 0.8), 0, 3);
-    out[d] = { mood, energy, sleep, irrit, meds: rnd() > 0.1, note: i === 70 ? 'Conflit au travail' : i === 5 ? 'Plein de projets en tête' : '' };
+    const anxiety = clamp(Math.round(Math.max(0, -level) * 0.9 + rnd() * 0.9), 0, 3);
+    const thoughts = clamp(Math.round(Math.max(0, level) * 1.1 + rnd() * 0.7), 0, 3);
+    out[d] = { mood, energy, sleep, irrit, anxiety, thoughts, meds: rnd() > 0.1, note: i === 70 ? 'Conflit au travail' : i === 5 ? 'Plein de projets en tête' : '' };
   }
   return out;
 }
@@ -597,7 +715,63 @@ window.addEventListener('resize', () => {
   resizeT = setTimeout(() => { if (!$('#tab-history').hidden) renderHistory(); }, 150);
 });
 
+/* ---------- installation (iOS / Android) ---------- */
+const ua = navigator.userAgent;
+const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroid = /Android/.test(ua);
+const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+let deferredPrompt = null;
+
+function installDismissed() { try { return localStorage.getItem('bip.installDismissed') === '1'; } catch (e) { return false; } }
+function renderInstall() {
+  const box = $('#install'), state = $('#install-state');
+  if (isStandalone) {
+    box.hidden = true;
+    state.innerHTML = '<p class="ok">✓ Bip est installée sur cet appareil.</p>';
+    return;
+  }
+  let body = '';
+  if (deferredPrompt) {
+    body = `<p class="small">Ajoutez Bip à votre écran d'accueil : elle s'ouvre comme une app, fonctionne hors connexion, et vos données restent sur le téléphone.</p>
+      <button type="button" class="primary" data-install>Installer l'app</button>`;
+  } else if (isIOS) {
+    body = `<p class="small">Pour l'avoir comme une app : dans <b>Safari</b>, touchez <b>Partager</b> <span class="share-ic" aria-hidden="true">⬆︎</span> puis <b>« Sur l'écran d'accueil »</b>.</p>
+      <p class="muted small">Faites-le avant de commencer : sur iPhone, l'app installée garde ses propres données, séparées de Safari. Installée, elle protège aussi vos données de l'effacement automatique de Safari.</p>`;
+  } else if (isAndroid) {
+    body = `<p class="small">Pour l'avoir comme une app : dans Chrome, touchez <b>⋮</b> puis <b>« Installer l'application »</b> ou <b>« Ajouter à l'écran d'accueil »</b>.</p>`;
+  }
+  state.innerHTML = deferredPrompt ? '<button type="button" data-install>Installer l\'app</button>' : '';
+  box.hidden = !body || installDismissed();
+  box.innerHTML = `<div class="install-head"><h2>📲 Installer Bip</h2><button type="button" class="x" data-dismiss aria-label="Masquer">✕</button></div>${body}`;
+}
+window.addEventListener('beforeinstallprompt', ev => { ev.preventDefault(); deferredPrompt = ev; renderInstall(); });
+window.addEventListener('appinstalled', () => { deferredPrompt = null; $('#install').hidden = true; });
+document.addEventListener('click', async ev => {
+  if (ev.target.closest('[data-install]') && deferredPrompt) {
+    deferredPrompt.prompt();
+    try { await deferredPrompt.userChoice; } catch (e) {}
+    deferredPrompt = null; renderInstall();
+  }
+  if (ev.target.closest('[data-dismiss]')) {
+    try { localStorage.setItem('bip.installDismissed', '1'); } catch (e) {}
+    $('#install').hidden = true;
+  }
+});
+
+/* Demande au navigateur de ne pas effacer les données en cas de manque de place */
+async function askPersist() {
+  const p = $('#d-persist');
+  if (!navigator.storage || !navigator.storage.persist) return;
+  try {
+    const ok = (await navigator.storage.persisted()) || (await navigator.storage.persist());
+    p.textContent = ok ? 'Stockage protégé : le navigateur ne l\'effacera pas automatiquement.' : '';
+  } catch (e) {}
+}
+
 /* ---------- démarrage ---------- */
+renderSymptomInputs();
+renderInstall();
+askPersist();
 fillSettings();
 fillForm(today());
 renderStatus();
@@ -606,6 +780,6 @@ try { startTab = sessionStorage.getItem('bip.tab') || 'today'; } catch (e) {}
 showTab(startTab);
 window.addEventListener('focus', () => { if (F.date.max !== today()) { fillForm(today()); renderStatus(); } });
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
