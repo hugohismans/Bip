@@ -20,6 +20,34 @@ Les valeurs de la veille sont reprises, on ne touche que ce qui a changé.
 
 Le choix se fait dans *Réglages*, idéalement avec son psychiatre.
 
+## Ma façon de noter (étalonnage personnel)
+
+Chacun utilise les curseurs à sa façon. Après 21 relevés, Bip apprend sur les 6 derniers mois
+le **repère** (médiane) et l'**amplitude habituelle** (écart moyen à la médiane) de chaque curseur,
+et raisonne ensuite en écarts à ces habitudes :
+
+- quelqu'un qui ne note presque jamais l'irritabilité : un **1** compte déjà comme un signal ;
+- quelqu'un qui la note souvent à 2 : il faut un **3** pour déclencher une alerte ;
+- humeur et énergie : un +1 pèse plus chez quelqu'un de très mesuré ;
+- sommeil : une « nuit courte » dépend de la régularité habituelle des nuits.
+
+Garde-fous : le repère de l'humeur et de l'énergie ne peut pas s'éloigner de plus de 1 de la neutralité
+et l'amplitude est bornée, pour qu'une longue phase basse ou haute ne devienne pas « la normale ».
+Le détail est visible (et désactivable) dans *Réglages → Ma façon de noter*.
+
+## Signes d'alerte personnels et plan d'action
+
+Dans *Réglages*, on choisit ses propres signes avant-coureurs (suggestions fournies), chacun rattaché
+à la phase haute ou basse, et on écrit son plan d'action avec son psychiatre. Les signes se cochent
+en un geste le soir ; plusieurs signes en quelques jours déclenchent une alerte, et le plan s'affiche
+dans la carte « Que faire » sous les alertes.
+
+## Récapitulatif pour la consultation
+
+*Historique → Récapitulatif* : depuis la dernière consultation notée (ou 3 mois), relevés, indice moyen,
+jours en zone haute / basse, sommeil, phases repérées, graphes, symptômes, signes, plan et notes.
+Impression / PDF (toujours en clair) ou fichier .html à envoyer.
+
 ## Ce que l'app calcule
 
 - **Indice du jour** (−3 à +3) = 50 % humeur + 30 % énergie + 20 % écart de sommeil

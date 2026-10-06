@@ -60,6 +60,7 @@
       </div>
 
       <div id="symptoms"></div>
+      <div id="signs-today" class="signs-today"></div>
 
       <details class="more">
         <summary>+ Note, traitement (facultatif)</summary>
@@ -79,6 +80,7 @@
 
   <!-- ============ HISTORIQUE ============ -->
   <section id="tab-history" class="tab" hidden>
+    <button type="button" id="open-report" class="report-btn">📄 Récapitulatif pour la consultation</button>
     <div class="card">
       <div class="chart-head">
         <h2>Indice d'humeur</h2>
@@ -95,6 +97,7 @@
         <span class="lg lg-low"></span>zone basse
       </p>
       <div class="chart" id="chart-mood"></div>
+      <p id="cal-note" class="muted small cal-note"></p>
     </div>
     <div class="card">
       <h2>Sommeil (heures)</h2>
@@ -110,6 +113,27 @@
       <h2>Journal</h2>
       <div class="table-wrap"><table id="log"><thead><tr><th>Jour</th><th>Hum.</th><th>Én.</th><th>Som.</th><th>Indice</th><th>Symptômes</th><th>Note</th></tr></thead><tbody></tbody></table></div>
     </div>
+  </section>
+
+  <!-- ============ RÉCAPITULATIF ============ -->
+  <section id="tab-report" class="tab" hidden>
+    <div class="card no-print report-ctrl">
+      <button type="button" class="x back" data-goto="history">← Historique</button>
+      <h2>Récapitulatif pour la consultation</h2>
+      <div class="report-form">
+        <label>Depuis le <input type="date" id="r-from"></label>
+        <label>Jusqu'au <input type="date" id="r-to"></label>
+        <label class="grow">Nom sur le document (facultatif) <input type="text" id="r-name" maxlength="80"></label>
+      </div>
+      <div class="btns">
+        <button type="button" class="primary-sm" id="r-print">🖨️ Imprimer / PDF</button>
+        <button type="button" id="r-share">Partager le fichier (.html)</button>
+        <button type="button" id="r-consult">Noter la consultation d'aujourd'hui</button>
+      </div>
+      <p id="r-toast" class="toast" role="status" aria-live="polite"></p>
+      <p class="muted small" id="r-hint">Sur téléphone, « Imprimer » permet aussi d'enregistrer en PDF. Le fichier .html s'ouvre dans n'importe quel navigateur et s'envoie par mail.</p>
+    </div>
+    <div id="report-body" class="report"></div>
   </section>
 
   <!-- ============ RÉGLAGES ============ -->
@@ -133,6 +157,33 @@
       <button type="submit" class="primary">Enregistrer les réglages</button>
       <p id="s-toast" class="toast" role="status" aria-live="polite"></p>
     </form>
+
+    <div class="card" id="signs-card">
+      <h2>Mes signes d'alerte</h2>
+      <p class="muted small">Les petits changements qui, chez <b>vous</b>, annoncent une phase haute ou basse. À choisir idéalement avec votre psychiatre ou vos proches. Ils apparaîtront sur la saisie du soir, à cocher en un geste.</p>
+      <ul id="signs-list" class="signs-list"></ul>
+      <form id="sign-add" class="sign-add">
+        <input type="text" id="sign-text" maxlength="80" placeholder="Ex. : je range toute la maison la nuit" aria-label="Nouveau signe">
+        <select id="sign-pole" aria-label="Phase"><option value="high">↑ phase haute</option><option value="low">↓ phase basse</option></select>
+        <button type="submit">Ajouter</button>
+      </form>
+      <p class="small" style="margin:10px 0 4px"><b>Suggestions</b> <span class="muted">(touchez pour ajouter)</span></p>
+      <div id="signs-suggest" class="suggest-list"></div>
+      <h2 style="margin-top:16px">Mon plan d'action</h2>
+      <p class="muted small">Ce que vous avez convenu de faire quand ça monte ou quand ça descend. Il s'affichera avec les alertes.</p>
+      <label class="plan-label">Si je pars en phase haute
+        <textarea id="s-plan-high" rows="3" maxlength="1000" placeholder="Ex. : je me couche à 23 h sans écran, je reporte les achats de plus de 50 €, j'appelle le Dr X dans les 48 h, je préviens Léa."></textarea></label>
+      <label class="plan-label">Si je pars en phase basse
+        <textarea id="s-plan-low" rows="3" maxlength="1000" placeholder="Ex. : je sors marcher 20 min le matin, je garde mes horaires de lever, j'appelle un proche chaque jour, rendez-vous avec le Dr X."></textarea></label>
+      <p id="signs-toast" class="toast" role="status" aria-live="polite"></p>
+    </div>
+
+    <div class="card" id="cal-card">
+      <h2>Ma façon de noter</h2>
+      <p class="muted small">Chacun utilise les curseurs à sa façon. Bip apprend la vôtre sur les 6 derniers mois : si vous ne notez presque jamais un symptôme, un 1 compte déjà comme un signal ; si vous le notez souvent à 3, il faudra s'écarter davantage pour déclencher une alerte. Pour qu'une longue phase basse ou haute ne devienne pas « la normale », l'ajustement est limité.</p>
+      <label class="check"><input type="checkbox" id="s-calibrate"> Ajuster les calculs à ma façon de noter</label>
+      <div id="cal-detail"></div>
+    </div>
 
     <div class="card" id="install-help">
       <h2>Installer l'app sur le téléphone</h2>

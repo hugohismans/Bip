@@ -31,7 +31,23 @@ const DEFAULT_SETTINGS = {
   famName: '', famTel: '',
   remind: false, remindTime: '21:00',
   symptoms: SYMPTOMS.filter(x => x.def).map(x => x.key),
+  calibrate: true,           // ajuster les calculs à la façon de noter du patient
+  signs: [],                 // signes d'alerte personnels { id, text, pole: 'high'|'low', archived? }
+  planHigh: '', planLow: '', // plan d'action écrit avec le psychiatre
+  consults: [],              // dates des consultations (pour le récapitulatif)
+  reportName: '',
 };
+
+/* Signes avant-coureurs fréquents, proposés comme point de départ */
+const SUGGESTED_SIGNS = [
+  ['high', 'Je dors moins sans être fatigué·e'], ['high', 'Je fais plein de projets ou de listes'],
+  ['high', 'Je dépense plus que d\'habitude'], ['high', 'Je parle plus vite ou plus fort'],
+  ['high', 'J\'envoie beaucoup de messages'], ['high', 'Je me sens invincible, très sûr·e de moi'],
+  ['high', 'Je commence plein de choses sans les finir'], ['high', 'Je prends des risques (conduite, sorties…)'],
+  ['low', 'Je m\'isole, j\'annule des sorties'], ['low', 'Je reste au lit plus longtemps'],
+  ['low', 'Je perds l\'intérêt pour ce que j\'aime'], ['low', 'Je néglige les repas ou la toilette'],
+  ['low', 'Je ressasse, je culpabilise'], ['low', 'Tout me demande un effort énorme'],
+];
 
 const MOOD_LABELS = { '-3': 'très basse', '-2': 'basse', '-1': 'un peu basse', '0': 'neutre', '1': 'un peu haute', '2': 'haute', '3': 'très haute' };
 const ENERGY_LABELS = { '-3': 'à plat', '-2': 'basse', '-1': 'un peu basse', '0': 'normale', '1': 'un peu haute', '2': 'haute', '3': 'survolté·e' };
@@ -60,6 +76,14 @@ let settings = normSettings(load(KEY_SETTINGS, {}));
 function normSettings(o) {
   const st = Object.assign({}, DEFAULT_SETTINGS, o);
   st.symptoms = Array.isArray(st.symptoms) ? st.symptoms.filter(k => SYM[k]) : DEFAULT_SETTINGS.symptoms.slice();
+  st.calibrate = st.calibrate !== false;
+  st.signs = (Array.isArray(st.signs) ? st.signs : [])
+    .filter(x => x && typeof x.id === 'string' && typeof x.text === 'string' && (x.pole === 'high' || x.pole === 'low'))
+    .map(x => ({ id: x.id.slice(0, 40), text: x.text.slice(0, 80), pole: x.pole, archived: !!x.archived }));
+  st.planHigh = typeof st.planHigh === 'string' ? st.planHigh.slice(0, 1000) : '';
+  st.planLow = typeof st.planLow === 'string' ? st.planLow.slice(0, 1000) : '';
+  st.consults = (Array.isArray(st.consults) ? st.consults : []).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  st.reportName = typeof st.reportName === 'string' ? st.reportName.slice(0, 80) : '';
   return st;
 }
 
@@ -82,12 +106,62 @@ const fmtH = h => String(h).replace('.', ',') + ' h';
 /* ---------- calculs ---------- */
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+/* ---------- étalonnage personnel ----------
+   Chacun utilise les échelles à sa façon : quelqu'un qui ne note jamais 3 signale
+   déjà quelque chose avec un 1 ; quelqu'un qui note souvent 3 doit s'écarter davantage.
+   On apprend donc, sur les 6 derniers mois, le point de repère (médiane) et l'amplitude
+   habituelle (écart moyen à la médiane) de chaque curseur, puis on raisonne en écarts.
+   Garde-fous : le repère de l'humeur et de l'énergie ne peut pas s'éloigner de plus de 1
+   de la neutralité, et l'amplitude est bornée, pour qu'une longue phase basse ou haute
+   ne devienne pas « la normale » et ne fasse pas taire les alertes. */
+const CAL_MIN = 21, CAL_WINDOW = 180;
+let calCache = null;
+function median(a) { const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; }
+function spread(a, c) { return 1.25 * a.reduce((t, v) => t + Math.abs(v - c), 0) / a.length; }
+function calibration() {
+  if (calCache) return calCache;
+  const from = addDays(today(), -(CAL_WINDOW - 1));
+  const list = Object.keys(entries).filter(d => d >= from).map(d => entries[d]);
+  const c = { on: settings.calibrate, active: false, n: list.length, need: Math.max(0, CAL_MIN - list.length), dims: {} };
+  if (c.on && list.length >= CAL_MIN) {
+    c.active = true;
+    for (const k of ['mood', 'energy']) {
+      const v = list.map(e => e[k]), med = median(v);
+      c.dims[k] = { center: clamp(med, -1, 1), scale: clamp(spread(v, med), 0.6, 1.5) };
+    }
+    const sl = list.map(e => e.sleep);
+    c.dims.sleep = { center: settings.baseline, scale: clamp(spread(sl, median(sl)), 0.75, 2) };
+    for (const x of SYMPTOMS) {
+      const v = list.filter(e => e[x.key] !== undefined).map(e => e[x.key]);
+      if (v.length < CAL_MIN) continue;
+      const med = median(v);
+      c.dims[x.key] = { center: Math.min(med, 2), scale: Math.max(0.5, spread(v, med)), mean: v.reduce((a, b) => a + b, 0) / v.length };
+    }
+  }
+  return (calCache = c);
+}
+function resetCalibration() { calCache = null; }
+
+/* Valeurs « ressenties » une fois ramenées à la façon de noter du patient */
+function effMood(e) { const d = calibration().dims.mood; return d ? clamp((e.mood - d.center) / d.scale, -3, 3) : e.mood; }
+function effEnergy(e) { const d = calibration().dims.energy; return d ? clamp((e.energy - d.center) / d.scale, -3, 3) : e.energy; }
+function sleepScore(e) { const d = calibration().dims.sleep; return clamp((settings.baseline - e.sleep) / (d ? d.scale : 1), -3, 3); }
+/* Nuit nettement plus courte / plus longue que d'habitude (2 h, ou 2 « écarts habituels » si étalonné) */
+function shortNight(e) { const d = calibration().dims.sleep, gap = settings.baseline - e.sleep; return d ? gap >= 1.5 && gap / d.scale >= 2 : gap >= 2; }
+function longNight(e) { const d = calibration().dims.sleep, gap = e.sleep - settings.baseline; return d ? gap >= 1.5 && gap / d.scale >= 2 : gap >= 2; }
+/* Symptôme inhabituellement présent pour CE patient */
+function symHigh(e, k, strong) {
+  const v = sv(e, k), d = calibration().dims[k];
+  if (!d) return v >= (strong ? 3 : 2);
+  return v >= 1 && (v - d.center) / d.scale >= (strong ? 2.5 : 1.5);
+}
+function symThreshold(k, strong) { for (let v = 1; v <= 3; v++) if (symHigh({ [k]: v }, k, strong)) return v; return null; }
+
 /* Indice du jour : -3 (bas) .. +3 (haut).
    Dormir moins que d'habitude est l'un des premiers signes de phase haute,
    dormir beaucoup plus accompagne souvent la phase basse. */
 function dayIndex(e) {
-  const sleepScore = clamp(settings.baseline - e.sleep, -3, 3);
-  return Math.round((0.5 * e.mood + 0.3 * e.energy + 0.2 * sleepScore) * 10) / 10;
+  return Math.round((0.5 * effMood(e) + 0.3 * effEnergy(e) + 0.2 * sleepScore(e)) * 10) / 10;
 }
 
 function avgWindow(endDate, days) {
@@ -126,6 +200,17 @@ function lastNDays(endDate, n) {
   return out;
 }
 
+function signStats(list, pole) {
+  const distinct = new Set(); let ticks = 0;
+  for (const e of list) for (const id of e.signs || []) {
+    const sg = signById(id);
+    if (sg && sg.pole === pole) { ticks++; distinct.add(sg.text); }
+  }
+  return { ticks, distinct };
+}
+function signById(id) { return settings.signs.find(x => x.id === id); }
+function activeSigns() { return settings.signs.filter(x => !x.archived); }
+
 function phaseOf(avg) {
   if (avg === null) return { key: 'none', label: 'Pas assez de données', color: 'var(--neutral)' };
   if (avg >= 1) return { key: 'high', label: 'Phase haute', color: 'var(--high)' };
@@ -161,71 +246,83 @@ function analyze() {
 
   if (stale <= 1) {
     if (highStreak >= 4) {
-      alerts.push({ level: 'crit', title: `${highStreak} jours d'affilée en zone haute`,
+      alerts.push({ level: 'crit', pole: 'high', title: `${highStreak} jours d'affilée en zone haute`,
         text: "C'est la durée qui définit un épisode hypomaniaque. En phase haute on se sent souvent très bien, ce qui la rend difficile à repérer soi-même : c'est le bon moment pour appeler votre psychiatre et en parler à un proche.",
         who: ['psy', 'fam'] });
     } else if (highStreak >= 2) {
-      alerts.push({ level: 'warn', title: `${highStreak} jours d'affilée en zone haute`,
+      alerts.push({ level: 'warn', pole: 'high', title: `${highStreak} jours d'affilée en zone haute`,
         text: 'À surveiller. Protégez votre sommeil (horaires réguliers, pas d\'écrans tard), évitez les grosses décisions et dépenses. Si ça continue 2 jours de plus, contactez votre psychiatre.',
         who: [] });
     }
 
-    const shortNights = recent3.filter(e => e.sleep <= base - 2);
-    const energized = recent3.some(e => e.energy >= 1);
+    const shortNights = recent3.filter(shortNight);
+    const energized = recent3.some(e => effEnergy(e) >= 1);
     if (shortNights.length >= 2 && energized) {
-      const moodUp = recent3.some(e => e.mood >= 1);
-      alerts.push({ level: moodUp ? 'crit' : 'warn', title: 'Moins de sommeil, sans fatigue',
-        text: `${shortNights.length} nuits sur 3 au moins 2 h sous votre sommeil habituel (${fmtH(base)}), avec une énergie haute. Le besoin de sommeil réduit est l'un des signes précoces les plus fiables d'une phase haute.` + (moodUp ? ' Avec une humeur haute en plus, contactez votre psychiatre.' : ''),
+      const moodUp = recent3.some(e => effMood(e) >= 1);
+      alerts.push({ level: moodUp ? 'crit' : 'warn', pole: 'high', title: 'Moins de sommeil, sans fatigue',
+        text: `${shortNights.length} nuits sur 3 nettement sous votre sommeil habituel (${fmtH(base)}), avec une énergie haute. Le besoin de sommeil réduit est l'un des signes précoces les plus fiables d'une phase haute.` + (moodUp ? ' Avec une humeur haute en plus, contactez votre psychiatre.' : ''),
         who: moodUp ? ['psy', 'fam'] : ['psy'] });
     }
 
-    const accelDays = recent3.filter(e => sv(e, 'thoughts') >= 2 || sv(e, 'impuls') >= 2);
+    const accelDays = recent3.filter(e => symHigh(e, 'thoughts') || symHigh(e, 'impuls'));
     if (accelDays.length >= 2) {
-      const withHigh = accelDays.some(e => dayIndex(e) >= 1 || e.sleep <= base - 2);
-      alerts.push({ level: withHigh ? 'crit' : 'warn', title: 'Pensées qui accélèrent',
-        text: `${accelDays.length} jours sur 3 avec des pensées rapides ou de l'impulsivité nettes. C'est un signe typique de phase haute, souvent vécu comme agréable.` +
+      const withHigh = accelDays.some(e => dayIndex(e) >= 1 || shortNight(e));
+      alerts.push({ level: withHigh ? 'crit' : 'warn', pole: 'high', title: 'Pensées qui accélèrent',
+        text: `${accelDays.length} jours sur 3 avec des pensées rapides ou de l'impulsivité inhabituelles pour vous. C'est un signe typique de phase haute, souvent vécu comme agréable.` +
           (withHigh ? ' Avec une humeur haute ou moins de sommeil, appelez votre psychiatre.' : ' Si ça se confirme, parlez-en à votre psychiatre.'),
         who: withHigh ? ['psy', 'fam'] : ['psy'] });
     }
-    if (recent3.some(e => sv(e, 'impuls') >= 3)) {
-      alerts.push({ level: 'warn', title: 'Impulsivité forte',
+    if (recent3.some(e => symHigh(e, 'impuls', true))) {
+      alerts.push({ level: 'warn', pole: 'high', title: 'Impulsivité forte',
         text: 'Règle des 48 h : reportez les grosses dépenses, achats en ligne et décisions importantes. Vous pouvez demander à un proche de garder votre carte bancaire quelques jours.',
         who: ['fam'] });
     }
 
-    const mixedDays = recent3.filter(e => e.mood <= -1 &&
-      (e.energy >= 1 || sv(e, 'irrit') >= 2 || sv(e, 'anxiety') >= 2 || sv(e, 'thoughts') >= 2));
+    const mixedDays = recent3.filter(e => effMood(e) <= -1 &&
+      (effEnergy(e) >= 1 || symHigh(e, 'irrit') || symHigh(e, 'anxiety') || symHigh(e, 'thoughts')));
     if (mixedDays.length >= 2) {
-      alerts.push({ level: 'crit', title: 'Signes mixtes',
+      alerts.push({ level: 'crit', pole: 'mixed', title: 'Signes mixtes',
         text: "Humeur basse combinée à de l'agitation, de l'irritabilité, de l'anxiété ou des pensées rapides plusieurs jours de suite. Les états mixtes sont plus à risque : contactez votre psychiatre rapidement et ne restez pas seul·e avec ça.",
         who: ['psy', 'fam'] });
     }
 
     if (lowStreak >= 14) {
-      alerts.push({ level: 'crit', title: `${lowStreak} jours d'affilée en zone basse`,
+      alerts.push({ level: 'crit', pole: 'low', title: `${lowStreak} jours d'affilée en zone basse`,
         text: 'Deux semaines de phase basse correspondent à la durée d\'un épisode dépressif. Prenez rendez-vous avec votre psychiatre et parlez-en à un proche.',
         who: ['psy', 'fam'] });
     } else if (lowStreak >= 7) {
-      alerts.push({ level: 'warn', title: `${lowStreak} jours d'affilée en zone basse`,
+      alerts.push({ level: 'warn', pole: 'low', title: `${lowStreak} jours d'affilée en zone basse`,
         text: 'Une semaine en zone basse : c\'est le moment d\'en parler à votre psychiatre, avant que ça s\'installe.',
         who: ['psy'] });
     } else if (lowStreak >= 3) {
-      alerts.push({ level: 'warn', title: `${lowStreak} jours d'affilée en zone basse`,
+      alerts.push({ level: 'warn', pole: 'low', title: `${lowStreak} jours d'affilée en zone basse`,
         text: 'À surveiller. Gardez un rythme régulier (lever, repas, lumière du jour, un peu d\'activité) et restez en lien avec vos proches.',
         who: [] });
     }
 
-    const irritDays = recent7.filter(e => sv(e, 'irrit') >= 2).length;
+    const irritDays = recent7.filter(e => symHigh(e, 'irrit')).length;
     if (irritDays >= 3 && !mixedDays.length) {
       alerts.push({ level: 'warn', title: 'Irritabilité fréquente',
-        text: `${irritDays} jours sur les 7 derniers avec une irritabilité nette. Elle peut accompagner une phase haute comme une phase basse : notez-le pour votre prochain rendez-vous.`,
+        text: `${irritDays} jours sur les 7 derniers avec une irritabilité inhabituelle pour vous. Elle peut accompagner une phase haute comme une phase basse : notez-le pour votre prochain rendez-vous.`,
         who: [] });
     }
-    const anxDays = recent7.filter(e => sv(e, 'anxiety') >= 2).length;
+    const anxDays = recent7.filter(e => symHigh(e, 'anxiety')).length;
     if (anxDays >= 4 && !mixedDays.length) {
       alerts.push({ level: 'warn', title: 'Anxiété persistante',
-        text: `${anxDays} jours sur les 7 derniers avec une anxiété nette. Parlez-en à votre psychiatre : elle peut précéder un changement de phase et se soigne.`,
+        text: `${anxDays} jours sur les 7 derniers avec une anxiété inhabituelle pour vous. Parlez-en à votre psychiatre : elle peut précéder un changement de phase et se soigne.`,
         who: ['psy'] });
+    }
+
+    // Signes d'alerte personnels : ceux que le patient a choisis avec son psychiatre
+    for (const [pole, days, label] of [['high', 3, 'phase haute'], ['low', 5, 'phase basse']]) {
+      const st = signStats(lastNDays(last, days), pole);
+      if (st.ticks >= 3 || st.distinct.size >= 2) {
+        const strong = pole === 'high' ? highStreak >= 2 || shortNights.length >= 1 : lowStreak >= 3;
+        alerts.push({ level: strong ? 'crit' : 'warn', pole, title: `Vos signes de ${label}`,
+          text: `Ces ${days} derniers jours : ${[...st.distinct].join(' · ')}. Ce sont les signes que vous avez repérés comme annonciateurs : ` +
+            (strong ? 'avec le reste du suivi, c\'est le moment d\'appeler votre psychiatre.' : 'restez attentif·ve et suivez votre plan.'),
+          who: strong ? ['psy', 'fam'] : [] });
+      }
     }
 
     const a3 = avgWindow(last, 3), before = avgWindow(addDays(last, -3), 7);
@@ -249,8 +346,10 @@ const $$ = sel => Array.from(document.querySelectorAll(sel));
 function showTab(name) {
   $$('.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
   $$('.tab').forEach(t => { t.hidden = t.id !== 'tab-' + name; });
+  document.body.classList.toggle('report-mode', name === 'report');
   try { sessionStorage.setItem('bip.tab', name); } catch (e) {}
   if (name === 'history') renderHistory();
+  if (name === 'report') openReport();
   window.scrollTo(0, 0);
 }
 $$('.tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
@@ -292,6 +391,27 @@ $('#symptoms').addEventListener('click', ev => {
   symVals[b.dataset.sym] = +b.dataset.v; paintSymptoms();
 });
 
+/* Signes personnels : puces à cocher, rien de pré-coché (ce sont des faits du jour) */
+let signVals = new Set();
+function renderSignInputs() {
+  const box = $('#signs-today'), list = activeSigns();
+  if (!list.length) {
+    box.innerHTML = '<p class="muted small sign-empty">Astuce : ajoutez <a href="#" data-goto="settings">vos propres signes d\'alerte</a>, à cocher en un geste.</p>';
+    return;
+  }
+  box.innerHTML = `<div class="sym-head"><span class="sym-label">Mes signes aujourd'hui</span><span class="sym-val">touchez ceux qui sont là</span></div>
+    <div class="sign-chips">${list.map(x => `<button type="button" class="sign-chip ${x.pole}" data-sign="${x.id}" aria-pressed="false">
+      <span class="pole" aria-label="${x.pole === 'high' ? 'phase haute' : 'phase basse'}">${x.pole === 'high' ? '↑' : '↓'}</span>${esc(x.text)}</button>`).join('')}</div>`;
+  paintSigns();
+}
+function paintSigns() { $$('[data-sign]').forEach(b => b.setAttribute('aria-pressed', String(signVals.has(b.dataset.sign)))); }
+$('#signs-today').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-sign]'); if (!b) return;
+  const id = b.dataset.sign;
+  if (signVals.has(id)) signVals.delete(id); else signVals.add(id);
+  paintSigns();
+});
+
 function fillForm(date) {
   F.date.value = date;
   const e = entries[date];
@@ -301,6 +421,8 @@ function fillForm(date) {
   F.mood.value = src.mood; F.energy.value = src.energy; F.sleep.value = src.sleep;
   symVals = {}; for (const k of settings.symptoms) symVals[k] = sv(src, k);
   paintSymptoms();
+  signVals = new Set(e && e.signs ? e.signs : []);
+  paintSigns();
   F.meds.checked = !!src.meds;
   F.note.value = e ? (e.note || '') : '';
   $('#f-saved').hidden = !e;
@@ -314,14 +436,18 @@ $('#entry').addEventListener('submit', ev => {
   ev.preventDefault();
   const date = F.date.value;
   if (!date || date > today()) { flash('#f-toast', 'Choisissez un jour passé ou aujourd\'hui.'); return; }
-  entries[date] = {
+  const old = entries[date] || {};
+  const e = {
     mood: +F.mood.value, energy: +F.energy.value, sleep: +F.sleep.value,
     meds: F.meds.checked, note: F.note.value.trim(),
   };
-  // on garde les symptômes déjà notés ce jour-là même s'ils ont été désactivés depuis
-  const old = entries[date] || {};
-  for (const x of SYMPTOMS) if (old[x.key] !== undefined) entries[date][x.key] = old[x.key];
-  for (const k of settings.symptoms) entries[date][k] = symVals[k] || 0;
+  // on garde les symptômes / signes déjà notés ce jour-là même s'ils ont été désactivés depuis
+  for (const x of SYMPTOMS) if (old[x.key] !== undefined) e[x.key] = old[x.key];
+  for (const k of settings.symptoms) e[k] = symVals[k] || 0;
+  const keptSigns = (old.signs || []).filter(id => { const sg = signById(id); return !sg || sg.archived; });
+  const signs = [...new Set([...keptSigns, ...signVals])];
+  if (signs.length) e.signs = signs;
+  entries[date] = e;
   const ok = save(KEY_ENTRIES, entries);
   flash('#f-toast', ok ? `Noté pour ${date === today() ? "aujourd'hui" : fmtShort(date)} ✓` : 'Impossible d\'enregistrer (stockage du navigateur indisponible).');
   fillForm(date);
@@ -349,9 +475,27 @@ function contactLinks(who) {
   return out.length ? `<div class="act">${out.join('')}</div>` : '';
 }
 
+/* Une seule carte « Que faire » sous les alertes : plan d'action + contacts, sans répétition */
+function actionCard(alerts) {
+  const poles = new Set(alerts.map(a => a.pole));
+  const high = poles.has('high') || poles.has('mixed'), low = poles.has('low') || poles.has('mixed');
+  const who = [...new Set(alerts.flatMap(a => a.who))];
+  const crit = alerts.some(a => a.level === 'crit');
+  const plans = [];
+  if (high && settings.planHigh) plans.push(['Si ça monte', settings.planHigh]);
+  if (low && settings.planLow) plans.push(['Si ça descend', settings.planLow]);
+  if (!plans.length && !who.length) return '';
+  const missing = (high && !settings.planHigh) || (low && !settings.planLow);
+  return `<div class="card action ${crit ? 'crit' : ''}"><h3>Que faire</h3>
+    ${plans.map(([t, p]) => `<div class="plan"><b>Mon plan · ${t}</b><p>${esc(p).replace(/\n/g, '<br>')}</p></div>`).join('')}
+    ${missing ? '<p class="muted small">Vous pouvez écrire <a href="#" data-goto="settings">votre plan d\'action</a> avec votre psychiatre : il s\'affichera ici.</p>' : ''}
+    ${contactLinks(who)}</div>`;
+}
+
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 function renderStatus() {
+  resetCalibration();
   renderBackupInfo();
   const a = analyze();
   const status = $('#status'), alertsEl = $('#alerts'), crisis = $('#crisis');
@@ -376,8 +520,8 @@ function renderStatus() {
   } else if (a.alerts.length) {
     alertsEl.innerHTML = a.alerts.map(al => `
       <div class="card alert ${al.level === 'crit' ? 'crit' : ''}">
-        <h3>${al.level === 'crit' ? '⚠️ ' : ''}${esc(al.title)}</h3><p>${esc(al.text)}</p>${contactLinks(al.who)}
-      </div>`).join('');
+        <h3>${al.level === 'crit' ? '⚠️ ' : ''}${esc(al.title)}</h3><p>${esc(al.text)}</p>
+      </div>`).join('') + actionCard(a.alerts);
   } else {
     alertsEl.innerHTML = '<div class="card"><p class="ok" style="margin:0">Aucun signal particulier ces derniers jours.</p></div>';
   }
@@ -422,9 +566,16 @@ function xTicks(start, days, W) {
   return out;
 }
 
+function tickAnchor(x, W) { return x > W - 26 ? 'end' : x < 46 ? 'start' : 'middle'; }
+
 function idxColor(v) { return v >= 1 ? 'var(--high)' : v <= -1 ? 'var(--low)' : 'var(--neutral)'; }
 
 function renderHistory() {
+  resetCalibration();
+  const c = calibration();
+  $('#cal-note').innerHTML = c.active
+    ? `Indice ajusté à votre façon de noter (étalonné sur ${c.n} relevés). <a href="#" data-goto="settings">Voir</a>`
+    : '';
   const end = today(), start = addDays(end, -(range - 1));
   const days = [];
   for (let i = 0; i < range; i++) days.push(addDays(start, i));
@@ -435,42 +586,56 @@ function renderHistory() {
   renderTable();
 }
 
+function signsSummary(e) { return (e.signs || []).map(signById).filter(Boolean).map(g => (g.pole === 'high' ? '↑ ' : '↓ ') + esc(g.text)).join(' · '); }
 function symSummary(e) {
   return SYMPTOMS.filter(x => sv(e, x.key) > 0).map(x => symLabel(x.key, e[x.key])).join(' · ');
 }
 
-/* Carte de chaleur : une ligne par symptôme, une case par jour (une seule teinte, plus foncé = plus fort) */
-function drawSymptoms(days, any) {
-  const box = $('#chart-symptoms');
-  const keys = SYMPTOMS.map(x => x.key).filter(k => settings.symptoms.includes(k) || days.some(d => entries[d] && entries[d][k] !== undefined));
-  $('#card-symptoms').hidden = !keys.length;
-  if (!keys.length) return;
+/* Carte de chaleur : une ligne par symptôme (+ signes personnels), une case par jour.
+   Une seule teinte, plus foncé = plus fort. */
+function heatRows(days) {
+  const rows = SYMPTOMS.filter(x => settings.symptoms.includes(x.key) || days.some(d => entries[d] && entries[d][x.key] !== undefined))
+    .map(x => ({ label: x.label, val: e => (e[x.key] === undefined ? null : e[x.key]), tip: e => (e[x.key] === undefined ? '—' : LEVELS[e[x.key]]) }));
+  const usedSign = pole => days.some(d => entries[d] && (entries[d].signs || []).some(id => { const g = signById(id); return g && g.pole === pole; }));
+  for (const [pole, label] of [['high', 'Mes signes ↑'], ['low', 'Mes signes ↓']]) {
+    if (!settings.signs.some(x => x.pole === pole && !x.archived) && !usedSign(pole)) continue;
+    const ids = e => (e.signs || []).map(signById).filter(g => g && g.pole === pole);
+    rows.push({ label, val: e => Math.min(3, ids(e).length), tip: e => ids(e).map(g => esc(g.text)).join(', ') || 'aucun' });
+  }
+  return rows;
+}
+
+function drawSymptoms(days, any, box = $('#chart-symptoms'), card = $('#card-symptoms')) {
+  const rows = heatRows(days);
+  if (card) card.hidden = !rows.length;
+  if (!rows.length) { box.innerHTML = ''; return; }
   if (!any) { box.innerHTML = '<p class="empty">Pas encore de données sur cette période.</p>'; return; }
-  const W0 = Math.max(280, Math.round(box.clientWidth || 680));
+  const W0 = Math.max(280, Math.round(box.clientWidth || 680)), W = W0;
   const labelW = Math.min(150, Math.round(W0 * 0.32)), rowH = 22;
   box.innerHTML = '';
-  const H = keys.length * rowH + 30;
+  const H = rows.length * rowH + 30;
   const svg = el('svg', { viewBox: `0 0 ${W0} ${H}`, role: 'img', 'aria-label': 'Intensité des symptômes par jour' }, box);
   const m = { l: labelW, r: 6, t: 4, b: 24 }, iw = W0 - m.l - m.r, n = days.length, slot = iw / n;
   const x = i => m.l + slot * (i + 0.5);
   const gap = slot > 4 ? 1 : 0;
   const op = [0, 0.28, 0.58, 1];
-  keys.forEach((k, r) => {
+  rows.forEach((row, r) => {
     const yy = m.t + r * rowH;
-    el('text', { x: 0, y: yy + rowH / 2 + 4 }, svg).textContent = SYM[k].label.length > 22 && labelW < 150 ? SYM[k].label.slice(0, 18) + '…' : SYM[k].label;
+    el('text', { x: 0, y: yy + rowH / 2 + 4 }, svg).textContent = row.label.length > 22 && labelW < 150 ? row.label.slice(0, 18) + '…' : row.label;
     el('rect', { x: m.l, y: yy + 2, width: iw, height: rowH - 4, fill: 'var(--grid)', rx: 3 }, svg);
     days.forEach((d, i) => {
-      const e = entries[d]; if (!e || !e[k]) return;
-      el('rect', { x: m.l + slot * i + gap / 2, y: yy + 2, width: Math.max(1, slot - gap), height: rowH - 4, fill: 'var(--sym)', 'fill-opacity': op[e[k]], rx: Math.min(2, slot / 3) }, svg);
+      const e = entries[d]; if (!e) return;
+      const v = row.val(e); if (!v) return;
+      el('rect', { x: m.l + slot * i + gap / 2, y: yy + 2, width: Math.max(1, slot - gap), height: rowH - 4, fill: 'var(--sym)', 'fill-opacity': op[v], rx: Math.min(2, slot / 3) }, svg);
     });
   });
   for (const [i, s] of xTicks(days[0], n, iw + 30)) {
-    el('text', { x: x(i), y: H - 6, 'text-anchor': 'middle' }, svg).textContent = fmtShort(s);
+    el('text', { x: x(i), y: H - 6, 'text-anchor': tickAnchor(x(i), W) }, svg).textContent = fmtShort(s);
   }
-  attachHover(svg, box, W0, days, x, { l: m.l, t: m.t, b: m.b }, keys.length * rowH, i => {
+  attachHover(svg, box, W0, days, x, { l: m.l, t: m.t, b: m.b }, rows.length * rowH, i => {
     const d = days[i], e = entries[d];
     if (!e) return `<b>${fmtLong(d)}</b><br>pas de relevé`;
-    return `<b>${fmtLong(d)}</b><br>` + (keys.map(k => `${SYM[k].label} : <b>${e[k] === undefined ? '—' : LEVELS[e[k]]}</b>`).join('<br>'));
+    return `<b>${fmtLong(d)}</b><br>` + rows.map(row => `${esc(row.label)} : <b>${row.tip(e)}</b>`).join('<br>');
   });
 }
 
@@ -486,8 +651,7 @@ function tickEvery(days, W) {
   return days <= 92 ? Math.max(per, 7) : per;
 }
 
-function drawMood(days, any) {
-  const box = $('#chart-mood');
+function drawMood(days, any, box = $('#chart-mood')) {
   if (!any) { box.innerHTML = '<p class="empty">Pas encore de données sur cette période.</p>'; return; }
   const { svg, W, H, m, iw, ih } = chartFrame(box, 240);
   svg.setAttribute('aria-label', 'Indice d\'humeur quotidien et moyenne sur 7 jours');
@@ -502,7 +666,7 @@ function drawMood(days, any) {
     el('text', { x: m.l - 6, y: y(v) + 4, 'text-anchor': 'end' }, svg).textContent = v > 0 ? '+' + v : v;
   }
   for (const [i, s] of xTicks(days[0], n, W)) {
-    el('text', { x: x(i), y: H - 6, 'text-anchor': 'middle' }, svg).textContent = fmtShort(s);
+    el('text', { x: x(i), y: H - 6, 'text-anchor': tickAnchor(x(i), W) }, svg).textContent = fmtShort(s);
   }
 
   // moyenne glissante 7 jours (au moins 3 jours notés dans la fenêtre)
@@ -528,12 +692,12 @@ function drawMood(days, any) {
     return `<b>${fmtLong(d)}</b><br>indice <b>${fmtNum(dayIndex(e))}</b>` + (avg !== null ? ` · moy. 7 j <b>${fmtNum(avg)}</b>` : '') +
       `<br>humeur ${MOOD_LABELS[e.mood]} · énergie ${ENERGY_LABELS[e.energy]}<br>sommeil ${fmtH(e.sleep)}` +
       (symSummary(e) ? `<br>${symSummary(e)}` : '') +
+      (signsSummary(e) ? `<br>signes : ${signsSummary(e)}` : '') +
       (e.note ? `<br><i>${esc(e.note)}</i>` : '');
   });
 }
 
-function drawSleep(days, any) {
-  const box = $('#chart-sleep');
+function drawSleep(days, any, box = $('#chart-sleep')) {
   if (!any) { box.innerHTML = '<p class="empty">Pas encore de données sur cette période.</p>'; return; }
   const { svg, W, H, m, iw, ih } = chartFrame(box, 160);
   svg.setAttribute('aria-label', 'Heures de sommeil par nuit');
@@ -547,14 +711,14 @@ function drawSleep(days, any) {
     el('text', { x: m.l - 6, y: y(v) + 4, 'text-anchor': 'end' }, svg).textContent = v;
   }
   for (const [i, s] of xTicks(days[0], n, W)) {
-    el('text', { x: x(i), y: H - 6, 'text-anchor': 'middle' }, svg).textContent = fmtShort(s);
+    el('text', { x: x(i), y: H - 6, 'text-anchor': tickAnchor(x(i), W) }, svg).textContent = fmtShort(s);
   }
   const bw = Math.max(1, Math.min(14, slot - 2));
   days.forEach((d, i) => {
     const e = entries[d]; if (!e || e.sleep <= 0) return;
     const h = y(0) - y(e.sleep), rr = Math.min(4, bw / 2, h);
     const x0 = x(i) - bw / 2, y0 = y(e.sleep);
-    const fill = e.sleep <= settings.baseline - 2 ? 'var(--high)' : e.sleep >= settings.baseline + 2 ? 'var(--low)' : 'var(--neutral)';
+    const fill = shortNight(e) ? 'var(--high)' : longNight(e) ? 'var(--low)' : 'var(--neutral)';
     el('path', { d: `M${x0},${y(0)}V${y0 + rr}Q${x0},${y0} ${x0 + rr},${y0}H${x0 + bw - rr}Q${x0 + bw},${y0} ${x0 + bw},${y0 + rr}V${y(0)}Z`, fill }, svg);
   });
   el('line', { x1: m.l, x2: m.l + iw, y1: y(settings.baseline), y2: y(settings.baseline), stroke: 'var(--text-2)', 'stroke-width': 1.5, 'stroke-dasharray': '5 4' }, svg);
@@ -598,13 +762,154 @@ function renderTable() {
   tb.innerHTML = dates.map(d => {
     const e = entries[d], v = dayIndex(e);
     return `<tr><td><button data-edit="${d}" title="Modifier">${fmtShort(d)}</button></td><td>${e.mood}</td><td>${e.energy}</td><td>${fmtH(e.sleep)}</td>
-      <td style="color:${idxColor(v)};font-weight:600">${fmtNum(v)}</td><td>${SYMPTOMS.filter(x => sv(e, x.key) > 0).map(x => `${x.short} ${e[x.key]}`).join(' · ')}</td><td class="note">${esc(e.note || '')}</td></tr>`;
+      <td style="color:${idxColor(v)};font-weight:600">${fmtNum(v)}</td><td>${[...SYMPTOMS.filter(x => sv(e, x.key) > 0).map(x => `${x.short} ${e[x.key]}`), ...signCounts(e)].join(' · ')}</td><td class="note">${esc(e.note || '')}</td></tr>`;
   }).join('');
+}
+function signCounts(e) {
+  const out = [];
+  for (const [pole, arrow] of [['high', '↑'], ['low', '↓']]) {
+    const n = (e.signs || []).map(signById).filter(g => g && g.pole === pole).length;
+    if (n) out.push(`signes ${arrow}${n}`);
+  }
+  return out;
 }
 $('#log').addEventListener('click', ev => {
   const b = ev.target.closest('[data-edit]');
   if (b) { showTab('today'); fillForm(b.dataset.edit); }
 });
+
+/* ---------- récapitulatif de consultation ---------- */
+function periodDays(from, to) { const out = []; for (let d = from; d <= to; d = addDays(d, 1)) out.push(d); return out; }
+
+/* Phases prolongées repérées sur la moyenne 7 jours : haute ≥ 4 jours, basse ≥ 7 jours */
+function detectEpisodes(days) {
+  const res = []; let cur = null;
+  for (const d of days) {
+    const w = avgWindow(d, 7), v = w.n >= 3 ? w.avg : null;
+    const pole = v === null ? null : v >= 1 ? 'high' : v <= -1 ? 'low' : null;
+    if (cur && pole === cur.pole) { cur.end = d; cur.peak = pole === 'high' ? Math.max(cur.peak, v) : Math.min(cur.peak, v); continue; }
+    if (cur) res.push(cur);
+    cur = pole ? { pole, start: d, end: d, peak: v } : null;
+  }
+  if (cur) res.push(cur);
+  return res.map(r => Object.assign(r, { len: diffDays(r.end, r.start) + 1 })).filter(r => r.len >= (r.pole === 'high' ? 4 : 7));
+}
+
+function openReport() {
+  const t = today();
+  const prev = settings.consults.filter(d => d < t).pop();
+  if (!$('#r-from').value) $('#r-from').value = prev || addDays(t, -89);
+  if (!$('#r-to').value) $('#r-to').value = t;
+  $('#r-name').value = settings.reportName;
+  renderReport();
+}
+['#r-from', '#r-to'].forEach(id => $(id).addEventListener('change', renderReport));
+$('#r-name').addEventListener('change', ev => { settings.reportName = ev.target.value.trim(); saveSettings(); renderReport(); });
+$('#open-report').addEventListener('click', () => showTab('report'));
+$('#r-print').addEventListener('click', () => window.print());
+$('#r-consult').addEventListener('click', () => {
+  const t = today();
+  if (!settings.consults.includes(t)) settings.consults.push(t);
+  settings.consults.sort(); saveSettings();
+  flash('#r-toast', 'Consultation du ' + fmtShort(t) + ' notée : le prochain récapitulatif partira de cette date ✓');
+});
+$('#r-share').addEventListener('click', () => {
+  // Fichier autonome : on recopie les styles de la page (sans le thème sombre) et le contenu du récap.
+  let css = '';
+  for (const sheet of document.styleSheets) {
+    try {
+      for (const r of sheet.cssRules) {
+        if (r.conditionText && /prefers-color-scheme|print/.test(r.conditionText)) continue;
+        if (r.selectorText && /data-theme="dark"/.test(r.selectorText)) continue;
+        css += r.cssText + '\n';
+      }
+    } catch (e) {}
+  }
+  const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(reportTitle())}</title><style>${css} body{background:#fff} main{padding:16px}</style></head>
+<body class="report-mode"><main>${$('#report-body').innerHTML}</main></body></html>`;
+  saveFile(`bip-recapitulatif-${$('#r-from').value}-${$('#r-to').value}.html`, html, 'text/html');
+});
+function reportTitle() { return 'Suivi de l\'humeur' + (settings.reportName ? ' – ' + settings.reportName : ''); }
+
+function renderReport() {
+  resetCalibration();
+  let from = $('#r-from').value, to = $('#r-to').value || today();
+  if (!from || from > to) from = addDays(to, -89);
+  const days = periodDays(from, to), list = days.filter(d => entries[d]), es = list.map(d => entries[d]);
+  const body = $('#report-body');
+  const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0) + ' %';
+  const head = `<header class="rp-head"><h1>${esc(reportTitle())}</h1>
+    <p>Du <b>${fmtLong(from)}</b> au <b>${fmtLong(to)}</b> · document généré le ${fmtShort(today())} ${fromStr(today()).getFullYear()} avec Bip</p></header>`;
+  if (!es.length) { body.innerHTML = head + '<p class="empty">Aucun relevé sur cette période.</p>'; return; }
+
+  const idx = es.map(dayIndex);
+  const hi = idx.filter(v => v >= 1).length, lo = idx.filter(v => v <= -1).length;
+  const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+  const sleepAvg = avg(es.map(e => e.sleep));
+  const shortN = es.filter(shortNight).length, longN = es.filter(longNight).length;
+  const medsN = es.filter(e => e.meds).length;
+  const eps = detectEpisodes(days);
+  const stat = (label, value, sub = '') => `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`;
+
+  const symRows = SYMPTOMS.filter(x => es.some(e => e[x.key] !== undefined)).map(x => {
+    const v = es.filter(e => e[x.key] !== undefined);
+    return `<tr><td>${esc(x.label)}</td><td>${v.length}</td><td>${v.filter(e => e[x.key] >= 1).length}</td><td>${v.filter(e => e[x.key] >= 2).length}</td>
+      <td>${v.filter(e => symHigh(e, x.key)).length}</td><td>${avg(v.map(e => e[x.key])).toFixed(1).replace('.', ',')}</td></tr>`;
+  }).join('');
+  const signRows = settings.signs.map(g => ({ g, n: es.filter(e => (e.signs || []).includes(g.id)).length })).filter(r => r.n)
+    .sort((a, b) => b.n - a.n).map(r => `<tr><td>${r.g.pole === 'high' ? '↑ haute' : '↓ basse'}</td><td>${esc(r.g.text)}</td><td>${r.n}</td></tr>`).join('');
+  const notes = list.filter(d => entries[d].note).map(d => `<li><b>${fmtShort(d)}</b> ${esc(entries[d].note)}</li>`).join('');
+  const a = to === today() ? analyze() : null;
+  const cal = calibration();
+
+  body.innerHTML = head + `
+    <section class="rp-sec"><div class="rp-grid">
+      ${stat('Relevés', `${es.length} / ${days.length} j`, pct(es.length, days.length) + ' des jours')}
+      ${stat('Indice moyen', fmtNum(avg(idx)), `de ${fmtNum(Math.min(...idx))} à ${fmtNum(Math.max(...idx))}`)}
+      ${stat('Jours en zone haute', hi, pct(hi, es.length) + ' des relevés')}
+      ${stat('Jours en zone basse', lo, pct(lo, es.length) + ' des relevés')}
+      ${stat('Sommeil moyen', fmtH(Math.round(sleepAvg * 10) / 10), `habituel ${fmtH(settings.baseline)}`)}
+      ${stat('Nuits courtes / longues', `${shortN} / ${longN}`, 'nettement sous / au-dessus de l\'habitude')}
+      ${stat('Traitement coché', pct(medsN, es.length), 'des jours notés')}
+      ${a ? stat('Aujourd\'hui', a.phase.label, a.dir.label) : ''}
+    </div></section>
+
+    <section class="rp-sec"><h2>Phases repérées</h2>
+      ${eps.length ? `<ul class="rp-list">${eps.map(r => `<li><span class="sign-pole ${r.pole}">${r.pole === 'high' ? '↑ haute' : '↓ basse'}</span>
+        du <b>${fmtShort(r.start)}</b> au <b>${fmtShort(r.end)}</b> (${r.len} j) · pic de la moyenne 7 j : ${fmtNum(r.peak)}</li>`).join('')}</ul>
+        <p class="muted small">Repérées sur la moyenne des 7 derniers jours (haute : au moins 4 jours ≥ +1 ; basse : au moins 7 jours ≤ −1). Les dates sont approximatives, de quelques jours.</p>`
+        : '<p class="small">Aucune phase haute ou basse prolongée sur la période.</p>'}
+      ${a && a.alerts.length ? `<p class="small"><b>Alertes en cours :</b> ${a.alerts.map(x => esc(x.title)).join(' · ')}</p>` : ''}
+    </section>
+
+    <section class="rp-sec"><h2>Indice d'humeur</h2>
+      <p class="legend"><span class="lg lg-dot"></span>jour <span class="lg lg-line"></span>moyenne 7 jours <span class="lg lg-high"></span>zone haute <span class="lg lg-low"></span>zone basse</p>
+      <div class="chart" id="rp-mood"></div></section>
+    <section class="rp-sec"><h2>Sommeil (heures)</h2>
+      <p class="legend"><span class="lg lg-bar"></span>nuit <span class="lg lg-high"></span>courte <span class="lg lg-low"></span>longue <span class="lg lg-base"></span>sommeil habituel</p>
+      <div class="chart" id="rp-sleep"></div></section>
+    <section class="rp-sec" id="rp-sym-sec"><h2>Symptômes et signes</h2>
+      <p class="legend"><span class="lg lg-s1"></span>un peu <span class="lg lg-s2"></span>nettement <span class="lg lg-s3"></span>beaucoup</p>
+      <div class="chart" id="rp-sym"></div>
+      ${symRows ? `<table class="rp-table"><thead><tr><th>Symptôme</th><th>Jours notés</th><th>≥ un peu</th><th>≥ nettement</th><th>Inhabituel*</th><th>Moyenne /3</th></tr></thead><tbody>${symRows}</tbody></table>
+        <p class="muted small">* Inhabituel au regard de la façon de noter du patient${cal.active ? '' : ' (étalonnage pas encore actif : seuil « nettement »)'}.</p>` : ''}
+    </section>
+    ${signRows ? `<section class="rp-sec"><h2>Signes d'alerte personnels</h2><table class="rp-table"><thead><tr><th>Phase</th><th>Signe</th><th>Jours</th></tr></thead><tbody>${signRows}</tbody></table></section>` : ''}
+    ${settings.planHigh || settings.planLow ? `<section class="rp-sec"><h2>Plan d'action</h2>
+      ${settings.planHigh ? `<p class="small"><b>Phase haute :</b> ${esc(settings.planHigh).replace(/\n/g, '<br>')}</p>` : ''}
+      ${settings.planLow ? `<p class="small"><b>Phase basse :</b> ${esc(settings.planLow).replace(/\n/g, '<br>')}</p>` : ''}</section>` : ''}
+    ${notes ? `<section class="rp-sec"><h2>Notes</h2><ul class="rp-notes">${notes}</ul></section>` : ''}
+    <footer class="rp-foot">
+      Auto-évaluation quotidienne : humeur et énergie de −3 à +3, sommeil en heures, symptômes de 0 à 3.
+      Indice du jour = 50 % humeur + 30 % énergie + 20 % écart de sommeil${cal.active ? `, ajustés à la façon de noter du patient (repère et amplitude habituels, étalonnés sur ${cal.n} relevés des 6 derniers mois)` : ''}.
+      Zone haute ≥ +1, zone basse ≤ −1. Inspiré de la NIMH Life Chart Method et de l'étude MONARCA.
+      Outil de suivi personnel, pas un outil de diagnostic.
+    </footer>`;
+  drawMood(days, true, $('#rp-mood'));
+  drawSleep(days, true, $('#rp-sleep'));
+  drawSymptoms(days, true, $('#rp-sym'), $('#rp-sym-sec'));
+}
 
 /* ---------- UI : réglages ---------- */
 const S = {
@@ -616,24 +921,100 @@ function fillSettings() {
   S.psyName.value = settings.psyName; S.psyTel.value = settings.psyTel;
   S.famName.value = settings.famName; S.famTel.value = settings.famTel;
   S.remind.checked = settings.remind; S.remindTime.value = settings.remindTime;
+  renderCalCard(); renderSignsCard();
   $('#s-symptoms').innerHTML = SYMPTOMS.map(x => `
     <label class="check sym-opt"><input type="checkbox" value="${x.key}" ${settings.symptoms.includes(x.key) ? 'checked' : ''}>
       <span><b>${esc(x.label)}</b>${x.def ? ' <span class="pill">conseillé</span>' : ''}<br><span class="muted">${esc(x.hint)}</span></span></label>`).join('');
 }
+function refreshAll() {
+  resetCalibration();
+  fillSettings(); renderSymptomInputs(); renderSignInputs(); fillForm(F.date.value || today()); renderStatus();
+}
+function saveSettings() { save(KEY_SETTINGS, settings); resetCalibration(); }
+
+/* ---------- réglages : ma façon de noter (étalonnage) ---------- */
+function renderCalCard() {
+  resetCalibration();
+  const c = calibration(), box = $('#cal-detail');
+  $('#s-calibrate').checked = c.on;
+  if (!c.on) { box.innerHTML = '<p class="muted small">Désactivé : les notes sont prises telles quelles, avec la même échelle pour tout le monde.</p>'; return; }
+  if (!c.active) {
+    box.innerHTML = `<p class="small">L'ajustement démarre après ${CAL_MIN} relevés sur les 6 derniers mois <b>(encore ${c.need})</b>. D'ici là, les notes sont prises telles quelles.</p>`;
+    return;
+  }
+  const f = v => fmtNum(v).replace(',0', '');
+  const dm = c.dims.mood, de = c.dims.energy, ds = c.dims.sleep;
+  const rows = [
+    ['Humeur', `repère ${f(dm.center)}`, `un +1 compte pour ${f((1 - dm.center) / dm.scale)}, un −1 pour ${f((-1 - dm.center) / dm.scale)}`],
+    ['Énergie', `repère ${f(de.center)}`, `un +1 compte pour ${f((1 - de.center) / de.scale)}, un −1 pour ${f((-1 - de.center) / de.scale)}`],
+    ['Sommeil', `vos nuits varient d'environ ±${(ds.scale / 1.25).toFixed(1).replace('.', ',')} h`, `1 h de moins compte pour ${f(1 / ds.scale)} ; nuit « courte » à partir de −${fmtH(Math.max(1.5, Math.ceil(2 * ds.scale * 2) / 2))}`],
+  ];
+  for (const x of SYMPTOMS) {
+    const d = c.dims[x.key]; if (!d) continue;
+    const thr = symThreshold(x.key);
+    rows.push([x.label, `en moyenne ${d.mean.toFixed(1).replace('.', ',')} / 3`,
+      thr ? `signal à partir de ${thr} (${LEVELS[thr]})` + (thr === 1 ? ' : vous le notez rarement, un 1 compte déjà' : '')
+          : 'aucun niveau ne ressort : vous le notez souvent au maximum'].concat(d.mean >= 1.5 ? ['⚠︎ très présent au quotidien : à évoquer en consultation'] : []));
+  }
+  box.innerHTML = `<p class="small">Étalonné sur <b>${c.n} relevés</b> (6 derniers mois).</p>
+    <table class="cal-table"><tbody>${rows.map(r => `<tr><th>${esc(r[0])}</th><td>${esc(r[1])}<br><span class="muted">${esc(r[2])}</span>${r[3] ? `<br><span class="warn-txt">${esc(r[3])}</span>` : ''}</td></tr>`).join('')}</tbody></table>`;
+}
+$('#s-calibrate').addEventListener('change', ev => {
+  settings.calibrate = ev.target.checked; saveSettings(); renderCalCard(); renderStatus();
+});
+
+/* ---------- réglages : mes signes d'alerte + plan ---------- */
+function newId() { return 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function addSign(text, pole) {
+  text = text.trim().slice(0, 80); if (!text) return;
+  const same = settings.signs.find(x => x.text.toLowerCase() === text.toLowerCase() && x.pole === pole);
+  if (same) same.archived = false; else settings.signs.push({ id: newId(), text, pole, archived: false });
+  saveSettings(); renderSignsCard(); renderSignInputs(); paintSigns();
+}
+function renderSignsCard() {
+  const list = activeSigns();
+  $('#signs-list').innerHTML = list.length ? list.map(x => `
+    <li><span class="sign-pole ${x.pole}">${x.pole === 'high' ? '↑ haute' : '↓ basse'}</span><span class="sign-text">${esc(x.text)}</span>
+      <button type="button" class="x" data-del-sign="${x.id}" aria-label="Retirer">✕</button></li>`).join('')
+    : '<li class="muted small">Aucun signe pour l\'instant. Choisissez dans les suggestions ou écrivez les vôtres.</li>';
+  const have = new Set(list.map(x => x.pole + x.text.toLowerCase()));
+  $('#signs-suggest').innerHTML = SUGGESTED_SIGNS.filter(([p, t]) => !have.has(p + t.toLowerCase()))
+    .map(([p, t]) => `<button type="button" class="suggest ${p}" data-add-sign="${p}">${p === 'high' ? '↑' : '↓'} ${esc(t)}</button>`).join('');
+  $('#s-plan-high').value = settings.planHigh; $('#s-plan-low').value = settings.planLow;
+}
+$('#signs-card').addEventListener('click', ev => {
+  const del = ev.target.closest('[data-del-sign]');
+  if (del) {
+    const sg = signById(del.dataset.delSign);
+    if (sg) sg.archived = true;   // gardé pour que l'historique reste lisible
+    saveSettings(); renderSignsCard(); renderSignInputs();
+  }
+  const sug = ev.target.closest('[data-add-sign]');
+  if (sug) addSign(sug.textContent.replace(/^[↑↓]\s*/, ''), sug.dataset.addSign);
+});
+$('#sign-add').addEventListener('submit', ev => {
+  ev.preventDefault();
+  addSign($('#sign-text').value, $('#sign-pole').value);
+  $('#sign-text').value = '';
+});
+for (const [id, key] of [['#s-plan-high', 'planHigh'], ['#s-plan-low', 'planLow']]) {
+  $(id).addEventListener('change', ev => { settings[key] = ev.target.value.slice(0, 1000); saveSettings(); flash('#signs-toast', 'Plan enregistré ✓'); renderStatus(); });
+}
+
 $('#settings').addEventListener('submit', async ev => {
   ev.preventDefault();
-  settings = {
+  settings = Object.assign({}, settings, {
     baseline: clamp(parseFloat(S.baseline.value) || DEFAULT_SETTINGS.baseline, 4, 12),
     psyName: S.psyName.value.trim(), psyTel: S.psyTel.value.trim(),
     famName: S.famName.value.trim(), famTel: S.famTel.value.trim(),
     remind: S.remind.checked, remindTime: S.remindTime.value || '21:00',
     symptoms: $$('#s-symptoms input:checked').map(i => i.value),
-  };
+  });
   if (settings.remind && 'Notification' in window && Notification.permission === 'default') {
     try { await Notification.requestPermission(); } catch (e) {}
   }
   save(KEY_SETTINGS, settings);
-  fillSettings(); renderSymptomInputs(); fillForm(F.date.value || today()); renderStatus();
+  refreshAll();
   flash('#s-toast', 'Réglages enregistrés ✓');
 });
 
@@ -679,10 +1060,11 @@ $('#d-export').addEventListener('click', exportBackup);
 document.addEventListener('click', ev => { if (ev.target.closest('[data-backup]')) exportBackup(); });
 
 $('#d-csv').addEventListener('click', () => {
-  const rows = [['date', 'humeur', 'energie', 'sommeil_h', ...SYMPTOMS.map(x => x.key), 'traitement_pris', 'indice', 'moyenne_7j', 'note']];
+  const rows = [['date', 'humeur', 'energie', 'sommeil_h', ...SYMPTOMS.map(x => x.key), 'signes_haute', 'signes_basse', 'traitement_pris', 'indice', 'moyenne_7j', 'note']];
   for (const d of Object.keys(entries).sort()) {
     const e = entries[d], w = avgWindow(d, 7);
-    rows.push([d, e.mood, e.energy, e.sleep, ...SYMPTOMS.map(x => e[x.key] === undefined ? '' : e[x.key]), e.meds ? 'oui' : 'non', dayIndex(e), w.n >= 3 ? w.avg.toFixed(2) : '', e.note || '']);
+    rows.push([d, e.mood, e.energy, e.sleep, ...SYMPTOMS.map(x => e[x.key] === undefined ? '' : e[x.key]),
+      ...['high', 'low'].map(p => (e.signs || []).map(signById).filter(g => g && g.pole === p).map(g => g.text).join(' / ')), e.meds ? 'oui' : 'non', dayIndex(e), w.n >= 3 ? w.avg.toFixed(2) : '', e.note || '']);
   }
   const csv = rows.map(r => r.map(c => /[",;\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : c).join(';')).join('\n');
   saveFile(`bip-humeur-${today()}.csv`, '﻿' + csv, 'text/csv');
@@ -700,6 +1082,10 @@ function cleanEntry(e) {
     meds: !!e.meds, note: typeof e.note === 'string' ? e.note.slice(0, 280) : '',
   };
   for (const x of SYMPTOMS) if (!isNaN(num(e[x.key]))) out[x.key] = clamp(Math.round(e[x.key]), 0, 3);
+  if (Array.isArray(e.signs)) {
+    const signs = e.signs.filter(id => typeof id === 'string').map(id => id.slice(0, 40)).slice(0, 30);
+    if (signs.length) out.signs = signs;
+  }
   return out;
 }
 
@@ -747,9 +1133,13 @@ $('#d-import-panel').addEventListener('click', ev => {
       if (pendingImport.settings) settings = normSettings(pendingImport.settings);
     } else {
       Object.assign(entries, pendingImport.entries);
+      // garder le texte des signes personnels référencés par les relevés importés
+      if (pendingImport.settings) {
+        for (const g of normSettings(pendingImport.settings).signs) if (!signById(g.id)) settings.signs.push(Object.assign({}, g, { archived: true }));
+      }
     }
     save(KEY_ENTRIES, entries); save(KEY_SETTINGS, settings);
-    fillSettings(); renderSymptomInputs(); fillForm(today()); renderStatus();
+    resetCalibration(); fillSettings(); renderSymptomInputs(); renderSignInputs(); fillForm(today()); renderStatus();
     flash('#s-toast', `${n} relevé(s) importé(s) ✓`);
   }
   pendingImport = null; panel.hidden = true; panel.innerHTML = '';
@@ -773,6 +1163,7 @@ function demoYear() {
     { from: 75, to: 66, mood: 0.8, energy: 1, sleep: -1, thoughts: 1, stress: 2 },
     { from: 9, to: -6, mood: 2.6, energy: 2.8, sleep: -3.2, thoughts: 3, impuls: 2.6, irrit: 1.6 },
   ];
+  const sgn = { high: ['dh1', 'dh2', 'dh3'], low: ['dl1', 'dl2', 'dl3'] };
   const NOTES = { 320: 'Fatigue, envie de rien', 300: 'Reprise du sport', 229: 'Nuit blanche à coder, super idée', 226: 'Gros achat en ligne',
     165: 'Tendu, dispute avec la famille', 140: 'Arrêt de travail', 112: 'Ça va mieux', 72: 'Déménagement', 40: 'Vacances',
     5: 'Plein de projets en tête', 2: 'Dormi 4 h, en pleine forme', 1: 'Proche trouve que je parle vite' };
@@ -800,6 +1191,11 @@ function demoYear() {
       focus: sym('focus'), stress: sym('stress'),
       meds: rnd() > (inLow ? 0.2 : 0.06), note: NOTES[i] || '',
     };
+    // signes personnels cochés quand l'épisode est bien là
+    const signs = [];
+    for (const id of sgn.high) if (lvl.mood + lvl.energy > 1.6 && rnd() < 0.55) signs.push(id);
+    for (const id of sgn.low) if (lvl.mood < -0.9 && rnd() < 0.5) signs.push(id);
+    if (signs.length) out[d].signs = signs;
   }
   return out;
 }
@@ -876,8 +1272,20 @@ async function askPersist() {
 
 /* ---------- démarrage ---------- */
 if (DEMO) {
-  entries = demoYear();
   settings.symptoms = ['irrit', 'anxiety', 'thoughts', 'impuls', 'focus', 'stress'];
+  settings.signs = [
+    { id: 'dh1', text: 'Je fais plein de projets ou de listes', pole: 'high' },
+    { id: 'dh2', text: 'Je dépense plus que d\'habitude', pole: 'high' },
+    { id: 'dh3', text: 'J\'envoie beaucoup de messages', pole: 'high' },
+    { id: 'dl1', text: 'Je m\'isole, j\'annule des sorties', pole: 'low' },
+    { id: 'dl2', text: 'Je reste au lit plus longtemps', pole: 'low' },
+    { id: 'dl3', text: 'Je néglige les repas ou la toilette', pole: 'low' },
+  ];
+  settings.planHigh = 'Coucher 23 h sans écran. Pas d\'achat de plus de 50 € avant 48 h. J\'appelle le Dr Martin et je préviens Léa.';
+  settings.planLow = 'Lever 8 h quoi qu\'il arrive, 20 min de marche dehors, un appel à un proche par jour. Rendez-vous avec le Dr Martin.';
+  settings.consults = [addDays(today(), -91)];
+  settings.reportName = 'Démo';
+  entries = demoYear();
   document.title = 'Bip – démo';
   const bar = document.createElement('div');
   bar.className = 'demo-bar';
@@ -886,6 +1294,7 @@ if (DEMO) {
   $('#d-wipe').hidden = true; $('#d-import').closest('label').hidden = true;
 }
 renderSymptomInputs();
+renderSignInputs();
 if (!DEMO) renderInstall();
 askPersist();
 fillSettings();
