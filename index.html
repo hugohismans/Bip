@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bip – Humeur du jour</title>
+<meta name="description" content="Suivi quotidien de l'humeur pour la bipolarité, en 5 secondes par jour.">
+<meta name="theme-color" content="#fcfcfb">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <h1>Bip</h1>
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="today" aria-selected="true">Aujourd'hui</button>
+    <button role="tab" data-tab="history" aria-selected="false">Historique</button>
+    <button role="tab" data-tab="settings" aria-selected="false">Réglages</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ============ AUJOURD'HUI ============ -->
+  <section id="tab-today" class="tab">
+    <form id="entry" class="card" autocomplete="off">
+      <div class="row-date">
+        <label for="f-date">Jour</label>
+        <input type="date" id="f-date" required>
+        <span id="f-saved" class="pill" hidden>déjà noté</span>
+      </div>
+
+      <div class="slider" data-key="mood">
+        <div class="slider-head"><label for="f-mood">Humeur</label><output id="o-mood"></output></div>
+        <input type="range" id="f-mood" min="-3" max="3" step="1">
+        <div class="ticks"><span>très basse</span><span>neutre</span><span>très haute</span></div>
+      </div>
+
+      <div class="slider" data-key="energy">
+        <div class="slider-head"><label for="f-energy">Énergie / activité</label><output id="o-energy"></output></div>
+        <input type="range" id="f-energy" min="-3" max="3" step="1">
+        <div class="ticks"><span>à plat</span><span>normale</span><span>survolté·e</span></div>
+      </div>
+
+      <div class="slider" data-key="sleep">
+        <div class="slider-head"><label for="f-sleep">Sommeil la nuit dernière</label><output id="o-sleep"></output></div>
+        <input type="range" id="f-sleep" min="0" max="14" step="0.5">
+        <div class="ticks"><span>0 h</span><span>7 h</span><span>14 h</span></div>
+      </div>
+
+      <div class="slider" data-key="irrit">
+        <div class="slider-head"><label for="f-irrit">Irritabilité / agitation</label><output id="o-irrit"></output></div>
+        <input type="range" id="f-irrit" min="0" max="3" step="1">
+        <div class="ticks"><span>aucune</span><span></span><span>forte</span></div>
+      </div>
+
+      <details class="more">
+        <summary>+ Note, traitement (facultatif)</summary>
+        <label class="check"><input type="checkbox" id="f-meds"> Traitement pris comme prévu</label>
+        <textarea id="f-note" rows="2" maxlength="280" placeholder="Événement, stress, alcool, voyage…"></textarea>
+      </details>
+
+      <button type="submit" class="primary" id="f-submit">Enregistrer</button>
+      <p id="f-toast" class="toast" role="status" aria-live="polite"></p>
+    </form>
+
+    <div id="crisis" class="card crisis" hidden></div>
+    <div id="status" class="card"></div>
+    <div id="alerts"></div>
+  </section>
+
+  <!-- ============ HISTORIQUE ============ -->
+  <section id="tab-history" class="tab" hidden>
+    <div class="card">
+      <div class="chart-head">
+        <h2>Indice d'humeur</h2>
+        <div class="seg" role="group" aria-label="Période">
+          <button data-range="30" aria-pressed="true">30 j</button>
+          <button data-range="90" aria-pressed="false">3 mois</button>
+          <button data-range="365" aria-pressed="false">1 an</button>
+        </div>
+      </div>
+      <p class="legend">
+        <span class="lg lg-dot"></span>jour
+        <span class="lg lg-line"></span>moyenne 7 jours
+        <span class="lg lg-high"></span>zone haute
+        <span class="lg lg-low"></span>zone basse
+      </p>
+      <div class="chart" id="chart-mood"></div>
+    </div>
+    <div class="card">
+      <h2>Sommeil (heures)</h2>
+      <p class="legend"><span class="lg lg-bar"></span>nuit <span class="lg lg-high"></span>≥ 2 h de moins <span class="lg lg-low"></span>≥ 2 h de plus <span class="lg lg-base"></span>sommeil habituel</p>
+      <div class="chart" id="chart-sleep"></div>
+    </div>
+    <div class="card">
+      <h2>Journal</h2>
+      <div class="table-wrap"><table id="log"><thead><tr><th>Jour</th><th>Hum.</th><th>Én.</th><th>Som.</th><th>Irr.</th><th>Indice</th><th>Note</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- ============ RÉGLAGES ============ -->
+  <section id="tab-settings" class="tab" hidden>
+    <form id="settings" class="card">
+      <h2>Mes repères</h2>
+      <label>Sommeil habituel (quand je vais bien)
+        <span class="inline"><input type="number" id="s-baseline" min="4" max="12" step="0.5"> h</span>
+      </label>
+      <h2>Contacts</h2>
+      <label>Psychiatre – nom <input type="text" id="s-psy-name"></label>
+      <label>Psychiatre – téléphone <input type="tel" id="s-psy-tel"></label>
+      <label>Proche de confiance – nom <input type="text" id="s-fam-name"></label>
+      <label>Proche de confiance – téléphone <input type="tel" id="s-fam-tel"></label>
+      <h2>Rappel</h2>
+      <label class="check"><input type="checkbox" id="s-remind"> Me rappeler le soir (si l'onglet est ouvert)</label>
+      <label>Heure du rappel <input type="time" id="s-remind-time"></label>
+      <button type="submit" class="primary">Enregistrer les réglages</button>
+      <p id="s-toast" class="toast" role="status" aria-live="polite"></p>
+    </form>
+
+    <div class="card">
+      <h2>Mes données</h2>
+      <p class="muted">Tout reste sur cet appareil (stockage du navigateur). Rien n'est envoyé sur internet. Pensez à exporter régulièrement une sauvegarde.</p>
+      <div class="btns">
+        <button id="d-export">Exporter (sauvegarde .json)</button>
+        <button id="d-csv">Exporter pour le psychiatre (.csv)</button>
+        <label class="btn">Importer une sauvegarde<input type="file" id="d-import" accept="application/json,.json" hidden></label>
+        <button id="d-demo">Charger des données de démo</button>
+        <button id="d-wipe" class="danger">Tout effacer</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Comment c'est calculé</h2>
+      <ul class="muted small">
+        <li><b>Indice du jour</b> (−3 à +3) = 50 % humeur + 30 % énergie + 20 % écart de sommeil (dormir 1 h de moins que d'habitude compte +1, dormir plus compte −1). Inspiré de la <i>NIMH Life Chart Method</i> et des échelles de l'étude MONARCA.</li>
+        <li><b>Phase</b> : moyenne des 7 derniers jours notés. ≥ +1 haute, ≥ +0,5 tendance haute, ≤ −0,5 tendance basse, ≤ −1 basse.</li>
+        <li><b>Direction</b> : pente de la droite de tendance sur 7 jours.</li>
+        <li><b>Alertes</b> : 4 jours d'affilée en zone haute (durée d'un épisode hypomaniaque), sommeil réduit de 2 h ou plus avec énergie haute (signe précoce le plus fiable), signes mixtes (humeur basse + agitation), 7 et 14 jours en zone basse, changement brutal.</li>
+      </ul>
+      <p class="muted small"><b>Bip n'est pas un outil de diagnostic</b> et ne remplace pas l'avis de votre psychiatre. Il aide à repérer des tendances et à en parler.</p>
+    </div>
+  </section>
+</main>
+
+<div id="tooltip" class="tooltip" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
