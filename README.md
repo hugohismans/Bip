@@ -20,6 +20,19 @@ Les valeurs de la veille sont reprises, on ne touche que ce qui a changé.
 
 Le choix se fait dans *Réglages*, idéalement avec son psychiatre.
 
+## 1, 2 ou 3 relevés par jour
+
+L'humeur peut changer au fil de la journée. Dans *Réglages → Relevés dans la journée* :
+1 relevé (journée), 2 (matinée ; après-midi et soirée) ou 3 (matinée ; après-midi ; soirée),
+chacun avec son heure de rappel. L'écran de saisie propose automatiquement le bon moment.
+
+- Humeur et énergie du jour = **moyenne** des relevés ; symptômes = **maximum** de la journée ;
+  sommeil, traitement et note sont communs à la journée.
+- L'**écart dans la journée** (relevé le plus bas → le plus haut) est dessiné sur le graphe ;
+  un écart ≥ 3 points deux jours sur trois déclenche une alerte (possible état mixte).
+- Notification par moment (« Comment s'est passée ta matinée ? »…) si ce moment n'est pas encore noté,
+  dans les 3 h qui suivent. Sans serveur, elles ne partent que si l'app est ouverte ou en arrière-plan.
+
 ## Ma façon de noter (étalonnage personnel)
 
 Chacun utilise les curseurs à sa façon. Après 21 relevés, Bip apprend sur les 6 derniers mois

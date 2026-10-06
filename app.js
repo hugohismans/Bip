@@ -23,13 +23,32 @@ const SYMPTOMS = [
 ];
 const SYM = Object.fromEntries(SYMPTOMS.map(x => [x.key, x]));
 const sv = (e, k) => e[k] || 0;
-function symLabel(k, v) { return `${SYM[k].label.toLowerCase()} ${LEVELS[v]}`; }
+const lvl = v => LEVELS[clamp(Math.round(v), 0, 3)];
+function symLabel(k, v) { return `${SYM[k].label.toLowerCase()} ${lvl(v)}`; }
+
+/* Moments de la journée : 1, 2 ou 3 relevés par jour.
+   time = heure du rappel (fin du moment), ask = texte de la notification. */
+const SLOT_SETS = {
+  1: [{ id: 'j', label: 'Journée', time: '21:00', ask: 'Comment s\'est passée ta journée ?' }],
+  2: [{ id: 'm', label: 'Matinée', time: '13:00', ask: 'Comment s\'est passée ta matinée ?' },
+      { id: 's', label: 'Après-midi et soirée', time: '21:30', ask: 'Comment se sont passés ton après-midi et ta soirée ?' }],
+  3: [{ id: 'm', label: 'Matinée', time: '12:30', ask: 'Comment s\'est passée ta matinée ?' },
+      { id: 'a', label: 'Après-midi', time: '18:00', ask: 'Comment s\'est passé ton après-midi ?' },
+      { id: 's', label: 'Soirée', time: '22:00', ask: 'Comment s\'est passée ta soirée ?' }],
+};
+const SLOT_LABEL = { j: 'journée', m: 'matin', a: 'après-midi', s: 'soir' };
+const SLOT_ORDER = ['m', 'a', 's', 'j'];
+function activeSlots() {
+  return SLOT_SETS[settings.slotCount].map(x => Object.assign({}, x, { time: settings.slotTimes[settings.slotCount + x.id] || x.time }));
+}
 
 const DEFAULT_SETTINGS = {
   baseline: 7.5,
   psyName: '', psyTel: '',
   famName: '', famTel: '',
   remind: false, remindTime: '21:00',
+  slotCount: 1,              // relevés par jour (1, 2 ou 3)
+  slotTimes: {},             // heures de rappel personnalisées, clé « <nombre><id> » (ex. « 3m »)
   symptoms: SYMPTOMS.filter(x => x.def).map(x => x.key),
   calibrate: true,           // ajuster les calculs à la façon de noter du patient
   signs: [],                 // signes d'alerte personnels { id, text, pole: 'high'|'low', archived? }
@@ -77,6 +96,13 @@ function normSettings(o) {
   const st = Object.assign({}, DEFAULT_SETTINGS, o);
   st.symptoms = Array.isArray(st.symptoms) ? st.symptoms.filter(k => SYM[k]) : DEFAULT_SETTINGS.symptoms.slice();
   st.calibrate = st.calibrate !== false;
+  st.slotCount = [1, 2, 3].includes(+st.slotCount) ? +st.slotCount : 1;
+  const times = {};
+  for (const [k, v] of Object.entries(st.slotTimes && typeof st.slotTimes === 'object' ? st.slotTimes : {})) {
+    if (/^[123][jmas]$/.test(k) && /^\d{2}:\d{2}$/.test(v)) times[k] = v;
+  }
+  if (!times['1j'] && /^\d{2}:\d{2}$/.test(st.remindTime || '') && st.remindTime !== '21:00') times['1j'] = st.remindTime; // ancien réglage
+  st.slotTimes = times;
   st.signs = (Array.isArray(st.signs) ? st.signs : [])
     .filter(x => x && typeof x.id === 'string' && typeof x.text === 'string' && (x.pole === 'high' || x.pole === 'low'))
     .map(x => ({ id: x.id.slice(0, 40), text: x.text.slice(0, 80), pole: x.pole, archived: !!x.archived }));
@@ -105,6 +131,29 @@ const fmtH = h => String(h).replace('.', ',') + ' h';
 
 /* ---------- calculs ---------- */
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const round1 = v => Math.round(v * 10) / 10;
+
+/* Valeurs du jour à partir des relevés de la journée :
+   humeur et énergie = moyenne, symptômes = le plus haut (un moment difficile compte),
+   signes = tous ceux cochés dans la journée. */
+function aggregateDay(e) {
+  const list = SLOT_ORDER.filter(id => e.slots && e.slots[id]).map(id => e.slots[id]);
+  if (!list.length) return e;
+  const mean = k => round1(list.reduce((t, x) => t + x[k], 0) / list.length);
+  e.mood = mean('mood'); e.energy = mean('energy');
+  for (const x of SYMPTOMS) {
+    const v = list.filter(r => r[x.key] !== undefined).map(r => r[x.key]);
+    if (v.length) e[x.key] = Math.max(...v); else delete e[x.key];
+  }
+  const signs = [...new Set(list.flatMap(r => r.signs || []))];
+  if (signs.length) e.signs = signs; else delete e.signs;
+  return e;
+}
+/* Écart entre le relevé le plus bas et le plus haut de la journée (humeur) */
+function dayRange(e) {
+  const v = e.slots ? Object.values(e.slots).map(r => r.mood) : [];
+  return v.length >= 2 ? Math.max(...v) - Math.min(...v) : 0;
+}
 
 /* ---------- étalonnage personnel ----------
    Chacun utilise les échelles à sa façon : quelqu'un qui ne note jamais 3 signale
@@ -313,6 +362,14 @@ function analyze() {
         who: ['psy'] });
     }
 
+    // Humeur qui fait de grands écarts au sein d'une même journée
+    const labile = recent3.filter(e => dayRange(e) >= 3).length;
+    if (labile >= 2) {
+      alerts.push({ level: mixedDays.length ? 'crit' : 'warn', pole: 'mixed', title: 'Humeur très changeante dans la journée',
+        text: `${labile} jours sur 3 avec un écart d'au moins 3 points entre vos relevés d'une même journée. Des variations rapides peuvent accompagner un état mixte : parlez-en à votre psychiatre, notes à l'appui.`,
+        who: ['psy'] });
+    }
+
     // Signes d'alerte personnels : ceux que le patient a choisis avec son psychiatre
     for (const [pole, days, label] of [['high', 3, 'phase haute'], ['low', 5, 'phase basse']]) {
       const st = signStats(lastNDays(last, days), pole);
@@ -335,7 +392,8 @@ function analyze() {
   }
 
   const lastE = entries[last];
-  const crisis = stale <= 1 && (lastE.mood === -3 || alerts.some(a => a.title === 'Signes mixtes'));
+  const lowest = lastE.slots ? Math.min(...Object.values(lastE.slots).map(r => r.mood)) : lastE.mood;
+  const crisis = stale <= 1 && (lowest <= -3 || alerts.some(a => a.title === 'Signes mixtes'));
   return { last, stale, avg, n7: w7.n, slope, phase: phaseOf(avg), dir: directionOf(slope), alerts, crisis };
 }
 
@@ -412,21 +470,58 @@ $('#signs-today').addEventListener('click', ev => {
   paintSigns();
 });
 
-function fillForm(date) {
+/* Moment en cours de saisie (null quand 1 relevé par jour) */
+let curSlot = null;
+function nowHHMM() { return new Date().toTimeString().slice(0, 5); }
+function addMin(hhmm, n) { const [h, m] = hhmm.split(':').map(Number), t = clamp(h * 60 + m + n, 0, 1439); return `${String(t / 60 | 0).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`; }
+/* Moment proposé : le premier non noté dont l'heure est (presque) passée, sinon le dernier passé, sinon le premier */
+function guessSlot(date) {
+  const slots = activeSlots(), e = entries[date] || {}, done = id => e.slots && e.slots[id];
+  if (date !== today()) return (slots.find(x => !done(x.id)) || slots[slots.length - 1]).id;
+  const now = nowHHMM();
+  const due = slots.filter(x => addMin(x.time, -90) <= now);
+  return (due.find(x => !done(x.id)) || due[due.length - 1] || slots[0]).id;
+}
+function renderSlotPicker(date) {
+  const box = $('#slot-picker');
+  if (settings.slotCount === 1) { box.hidden = true; box.innerHTML = ''; return; }
+  const e = entries[date] || {};
+  box.hidden = false;
+  box.innerHTML = activeSlots().map(x => {
+    const done = e.slots && e.slots[x.id];
+    return `<button type="button" data-slot="${x.id}" aria-pressed="${x.id === curSlot}">${done ? '✓ ' : ''}${esc(x.label)}</button>`;
+  }).join('');
+}
+$('#slot-picker').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-slot]'); if (!b) return;
+  fillForm(F.date.value || today(), b.dataset.slot);
+});
+
+function fillForm(date, slot) {
   F.date.value = date;
   const e = entries[date];
-  // Pas encore noté : on part de la dernière saisie pour aller plus vite
+  curSlot = settings.slotCount === 1 ? null : (slot || guessSlot(date));
+  renderSlotPicker(date);
+  const own = e && (curSlot ? e.slots && e.slots[curSlot] : e);
+  // Pas encore noté : on part du relevé précédent (moment d'avant, ou dernier jour noté)
+  let src = own;
+  if (!src && e && e.slots) src = e.slots[SLOT_ORDER.filter(id => e.slots[id]).pop()];
+  if (!src && e) src = e;
   const prev = Object.keys(entries).filter(d => d < date).sort().pop();
-  const src = e || (prev ? entries[prev] : { mood: 0, energy: 0, sleep: settings.baseline, meds: false });
-  F.mood.value = src.mood; F.energy.value = src.energy; F.sleep.value = src.sleep;
-  symVals = {}; for (const k of settings.symptoms) symVals[k] = sv(src, k);
+  if (!src) src = prev ? entries[prev] : { mood: 0, energy: 0, meds: false };
+  F.mood.value = Math.round(src.mood); F.energy.value = Math.round(src.energy);
+  F.sleep.value = e ? e.sleep : (prev ? entries[prev].sleep : settings.baseline);
+  symVals = {}; for (const k of settings.symptoms) symVals[k] = Math.round(sv(src, k));
   paintSymptoms();
-  signVals = new Set(e && e.signs ? e.signs : []);
+  signVals = new Set(own && own.signs ? own.signs : []);
   paintSigns();
-  F.meds.checked = !!src.meds;
+  F.meds.checked = e ? !!e.meds : !!(prev && entries[prev].meds);
   F.note.value = e ? (e.note || '') : '';
-  $('#f-saved').hidden = !e;
-  $('#f-submit').textContent = e ? 'Mettre à jour' : 'Enregistrer';
+  const label = curSlot ? activeSlots().find(x => x.id === curSlot).label.toLowerCase() : '';
+  $('#f-saved').hidden = !own;
+  $('#f-submit').textContent = (own ? 'Mettre à jour' : 'Enregistrer') + (label ? ` · ${label}` : '');
+  const multi = e && e.slots && Object.keys(e.slots).length > 1;
+  $('#f-slot-note').hidden = !(settings.slotCount === 1 && multi);
   F.date.max = today();
   updateOutputs();
 }
@@ -437,20 +532,26 @@ $('#entry').addEventListener('submit', ev => {
   const date = F.date.value;
   if (!date || date > today()) { flash('#f-toast', 'Choisissez un jour passé ou aujourd\'hui.'); return; }
   const old = entries[date] || {};
-  const e = {
-    mood: +F.mood.value, energy: +F.energy.value, sleep: +F.sleep.value,
-    meds: F.meds.checked, note: F.note.value.trim(),
-  };
-  // on garde les symptômes / signes déjà notés ce jour-là même s'ils ont été désactivés depuis
-  for (const x of SYMPTOMS) if (old[x.key] !== undefined) e[x.key] = old[x.key];
-  for (const k of settings.symptoms) e[k] = symVals[k] || 0;
-  const keptSigns = (old.signs || []).filter(id => { const sg = signById(id); return !sg || sg.archived; });
+  const id = curSlot || 'j';
+  const oldRec = (old.slots && old.slots[id]) || (!old.slots ? old : {});
+  // relevé du moment
+  const rec = { mood: +F.mood.value, energy: +F.energy.value, at: nowHHMM() };
+  // on garde les symptômes / signes déjà notés à ce moment-là même s'ils ont été désactivés depuis
+  for (const x of SYMPTOMS) if (oldRec[x.key] !== undefined) rec[x.key] = oldRec[x.key];
+  for (const k of settings.symptoms) rec[k] = symVals[k] || 0;
+  const keptSigns = (oldRec.signs || []).filter(sid => { const sg = signById(sid); return !sg || sg.archived; });
   const signs = [...new Set([...keptSigns, ...signVals])];
-  if (signs.length) e.signs = signs;
-  entries[date] = e;
+  if (signs.length) rec.signs = signs;
+  // journée : sommeil, traitement et note sont communs ; 1 relevé/jour remplace les relevés multiples
+  // 1 relevé/jour : il vaut pour toute la journée. Plusieurs : ils remplacent un éventuel relevé « journée ».
+  const slots = settings.slotCount === 1 ? {} : Object.assign({}, old.slots || {});
+  delete slots.j;
+  slots[id] = rec;
+  entries[date] = aggregateDay({ sleep: +F.sleep.value, meds: F.meds.checked, note: F.note.value.trim(), slots });
   const ok = save(KEY_ENTRIES, entries);
-  flash('#f-toast', ok ? `Noté pour ${date === today() ? "aujourd'hui" : fmtShort(date)} ✓` : 'Impossible d\'enregistrer (stockage du navigateur indisponible).');
-  fillForm(date);
+  const what = curSlot ? activeSlots().find(x => x.id === curSlot).label : (date === today() ? "aujourd'hui" : fmtShort(date));
+  flash('#f-toast', ok ? `Noté : ${what}${curSlot && date !== today() ? ' du ' + fmtShort(date) : ''} ✓` : 'Impossible d\'enregistrer (stockage du navigateur indisponible).');
+  fillForm(date, curSlot);
   renderStatus();
 });
 
@@ -542,9 +643,9 @@ document.addEventListener('click', ev => {
 
 /* ---------- UI : historique (graphes SVG) ---------- */
 let range = 30;
-$$('.seg button').forEach(b => b.addEventListener('click', () => {
+$$('[data-range]').forEach(b => b.addEventListener('click', () => {
   range = +b.dataset.range;
-  $$('.seg button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  $$('[data-range]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
   renderHistory();
 }));
 
@@ -586,6 +687,11 @@ function renderHistory() {
   renderTable();
 }
 
+function slotsSummary(e) {
+  if (!e.slots || Object.keys(e.slots).length < 2) return '';
+  return 'humeur ' + SLOT_ORDER.filter(id => e.slots[id]).map(id => `${SLOT_LABEL[id]} ${fmtNum(e.slots[id].mood, 0).replace('+0', '0')}`).join(' · ');
+}
+const fmtV = v => (Number.isInteger(v) ? String(v) : v.toFixed(1).replace('.', ','));
 function signsSummary(e) { return (e.signs || []).map(signById).filter(Boolean).map(g => (g.pole === 'high' ? '↑ ' : '↓ ') + esc(g.text)).join(' · '); }
 function symSummary(e) {
   return SYMPTOMS.filter(x => sv(e, x.key) > 0).map(x => symLabel(x.key, e[x.key])).join(' · ');
@@ -595,7 +701,7 @@ function symSummary(e) {
    Une seule teinte, plus foncé = plus fort. */
 function heatRows(days) {
   const rows = SYMPTOMS.filter(x => settings.symptoms.includes(x.key) || days.some(d => entries[d] && entries[d][x.key] !== undefined))
-    .map(x => ({ label: x.label, val: e => (e[x.key] === undefined ? null : e[x.key]), tip: e => (e[x.key] === undefined ? '—' : LEVELS[e[x.key]]) }));
+    .map(x => ({ label: x.label, val: e => (e[x.key] === undefined ? null : e[x.key]), tip: e => (e[x.key] === undefined ? '—' : lvl(e[x.key])) }));
   const usedSign = pole => days.some(d => entries[d] && (entries[d].signs || []).some(id => { const g = signById(id); return g && g.pole === pole; }));
   for (const [pole, label] of [['high', 'Mes signes ↑'], ['low', 'Mes signes ↓']]) {
     if (!settings.signs.some(x => x.pole === pole && !x.archived) && !usedSign(pole)) continue;
@@ -625,7 +731,7 @@ function drawSymptoms(days, any, box = $('#chart-symptoms'), card = $('#card-sym
     el('rect', { x: m.l, y: yy + 2, width: iw, height: rowH - 4, fill: 'var(--grid)', rx: 3 }, svg);
     days.forEach((d, i) => {
       const e = entries[d]; if (!e) return;
-      const v = row.val(e); if (!v) return;
+      const v = Math.round(row.val(e) || 0); if (!v) return;
       el('rect', { x: m.l + slot * i + gap / 2, y: yy + 2, width: Math.max(1, slot - gap), height: rowH - 4, fill: 'var(--sym)', 'fill-opacity': op[v], rx: Math.min(2, slot / 3) }, svg);
     });
   });
@@ -678,6 +784,14 @@ function drawMood(days, any, box = $('#chart-mood')) {
   });
   el('path', { d: path, fill: 'none', stroke: 'var(--line)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
 
+  // écart dans la journée : trait vertical entre le relevé le plus bas et le plus haut
+  const leg = $('#lg-range');
+  if (leg && box.id === 'chart-mood') leg.hidden = !days.some(d => entries[d] && dayRange(entries[d]) > 0);
+  days.forEach((d, i) => {
+    const e = entries[d]; if (!e || !e.slots || Object.keys(e.slots).length < 2) return;
+    const v = Object.values(e.slots).map(r => dayIndex(Object.assign({}, r, { sleep: e.sleep })));
+    el('line', { x1: x(i), x2: x(i), y1: y(Math.max(...v)), y2: y(Math.min(...v)), stroke: 'var(--neutral)', 'stroke-width': n <= 92 ? 2 : 1, 'stroke-linecap': 'round', 'stroke-opacity': 0.7 }, svg);
+  });
   const r = n <= 31 ? 4.5 : n <= 92 ? 3.5 : 2.5;
   days.forEach((d, i) => {
     const e = entries[d]; if (!e) return;
@@ -690,7 +804,8 @@ function drawMood(days, any, box = $('#chart-mood')) {
     const avg = avgs[i];
     if (!e) return `<b>${fmtLong(d)}</b><br>pas de relevé` + (avg !== null ? `<br>moyenne 7 j : <b>${fmtNum(avg)}</b>` : '');
     return `<b>${fmtLong(d)}</b><br>indice <b>${fmtNum(dayIndex(e))}</b>` + (avg !== null ? ` · moy. 7 j <b>${fmtNum(avg)}</b>` : '') +
-      `<br>humeur ${MOOD_LABELS[e.mood]} · énergie ${ENERGY_LABELS[e.energy]}<br>sommeil ${fmtH(e.sleep)}` +
+      `<br>humeur ${MOOD_LABELS[Math.round(e.mood)]} · énergie ${ENERGY_LABELS[Math.round(e.energy)]}<br>sommeil ${fmtH(e.sleep)}` +
+      (slotsSummary(e) ? `<br>${slotsSummary(e)}` : '') +
       (symSummary(e) ? `<br>${symSummary(e)}` : '') +
       (signsSummary(e) ? `<br>signes : ${signsSummary(e)}` : '') +
       (e.note ? `<br><i>${esc(e.note)}</i>` : '');
@@ -761,8 +876,8 @@ function renderTable() {
   if (!dates.length) { tb.innerHTML = '<tr><td colspan="7" class="muted">Aucun relevé sur cette période.</td></tr>'; return; }
   tb.innerHTML = dates.map(d => {
     const e = entries[d], v = dayIndex(e);
-    return `<tr><td><button data-edit="${d}" title="Modifier">${fmtShort(d)}</button></td><td>${e.mood}</td><td>${e.energy}</td><td>${fmtH(e.sleep)}</td>
-      <td style="color:${idxColor(v)};font-weight:600">${fmtNum(v)}</td><td>${[...SYMPTOMS.filter(x => sv(e, x.key) > 0).map(x => `${x.short} ${e[x.key]}`), ...signCounts(e)].join(' · ')}</td><td class="note">${esc(e.note || '')}</td></tr>`;
+    return `<tr><td><button data-edit="${d}" title="Modifier">${fmtShort(d)}</button></td><td>${fmtV(e.mood)}</td><td>${fmtV(e.energy)}</td><td>${fmtH(e.sleep)}</td>
+      <td style="color:${idxColor(v)};font-weight:600">${fmtNum(v)}</td><td>${[...SYMPTOMS.filter(x => sv(e, x.key) > 0).map(x => `${x.short} ${fmtV(e[x.key])}`), ...signCounts(e)].join(' · ')}</td><td class="note">${esc(e.note || '')}</td></tr>`;
   }).join('');
 }
 function signCounts(e) {
@@ -872,6 +987,7 @@ function renderReport() {
       ${stat('Sommeil moyen', fmtH(Math.round(sleepAvg * 10) / 10), `habituel ${fmtH(settings.baseline)}`)}
       ${stat('Nuits courtes / longues', `${shortN} / ${longN}`, 'nettement sous / au-dessus de l\'habitude')}
       ${stat('Traitement coché', pct(medsN, es.length), 'des jours notés')}
+      ${es.some(e => e.slots && Object.keys(e.slots).length > 1) ? stat('Écart dans la journée', fmtNum(avg(es.filter(e => e.slots && Object.keys(e.slots).length > 1).map(dayRange))).replace('+', ''), `moyen · ${es.filter(e => dayRange(e) >= 3).length} jour(s) ≥ 3 points`) : ''}
       ${a ? stat('Aujourd\'hui', a.phase.label, a.dir.label) : ''}
     </div></section>
 
@@ -884,7 +1000,7 @@ function renderReport() {
     </section>
 
     <section class="rp-sec"><h2>Indice d'humeur</h2>
-      <p class="legend"><span class="lg lg-dot"></span>jour <span class="lg lg-line"></span>moyenne 7 jours <span class="lg lg-high"></span>zone haute <span class="lg lg-low"></span>zone basse</p>
+      <p class="legend"><span class="lg lg-dot"></span>jour <span class="lg lg-line"></span>moyenne 7 jours <span class="lg lg-high"></span>zone haute <span class="lg lg-low"></span>zone basse${es.some(e => dayRange(e) > 0) ? ' <span class="lg lg-range"></span>écart dans la journée' : ''}</p>
       <div class="chart" id="rp-mood"></div></section>
     <section class="rp-sec"><h2>Sommeil (heures)</h2>
       <p class="legend"><span class="lg lg-bar"></span>nuit <span class="lg lg-high"></span>courte <span class="lg lg-low"></span>longue <span class="lg lg-base"></span>sommeil habituel</p>
@@ -901,7 +1017,7 @@ function renderReport() {
       ${settings.planLow ? `<p class="small"><b>Phase basse :</b> ${esc(settings.planLow).replace(/\n/g, '<br>')}</p>` : ''}</section>` : ''}
     ${notes ? `<section class="rp-sec"><h2>Notes</h2><ul class="rp-notes">${notes}</ul></section>` : ''}
     <footer class="rp-foot">
-      Auto-évaluation quotidienne : humeur et énergie de −3 à +3, sommeil en heures, symptômes de 0 à 3.
+      Auto-évaluation ${settings.slotCount > 1 ? `${settings.slotCount} fois par jour (humeur et énergie : moyenne des relevés ; symptômes : maximum de la journée)` : 'quotidienne'} : humeur et énergie de −3 à +3, sommeil en heures, symptômes de 0 à 3.
       Indice du jour = 50 % humeur + 30 % énergie + 20 % écart de sommeil${cal.active ? `, ajustés à la façon de noter du patient (repère et amplitude habituels, étalonnés sur ${cal.n} relevés des 6 derniers mois)` : ''}.
       Zone haute ≥ +1, zone basse ≤ −1. Inspiré de la NIMH Life Chart Method et de l'étude MONARCA.
       Outil de suivi personnel, pas un outil de diagnostic.
@@ -914,18 +1030,29 @@ function renderReport() {
 /* ---------- UI : réglages ---------- */
 const S = {
   baseline: $('#s-baseline'), psyName: $('#s-psy-name'), psyTel: $('#s-psy-tel'),
-  famName: $('#s-fam-name'), famTel: $('#s-fam-tel'), remind: $('#s-remind'), remindTime: $('#s-remind-time'),
+  famName: $('#s-fam-name'), famTel: $('#s-fam-tel'), remind: $('#s-remind'),
 };
 function fillSettings() {
   S.baseline.value = settings.baseline;
   S.psyName.value = settings.psyName; S.psyTel.value = settings.psyTel;
   S.famName.value = settings.famName; S.famTel.value = settings.famTel;
-  S.remind.checked = settings.remind; S.remindTime.value = settings.remindTime;
+  S.remind.checked = settings.remind;
+  renderSlotSettings(settings.slotCount);
   renderCalCard(); renderSignsCard();
   $('#s-symptoms').innerHTML = SYMPTOMS.map(x => `
     <label class="check sym-opt"><input type="checkbox" value="${x.key}" ${settings.symptoms.includes(x.key) ? 'checked' : ''}>
       <span><b>${esc(x.label)}</b>${x.def ? ' <span class="pill">conseillé</span>' : ''}<br><span class="muted">${esc(x.hint)}</span></span></label>`).join('');
 }
+function renderSlotSettings(count) {
+  $$('[data-slotcount]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.slotcount === count)));
+  $('#s-slot-times').innerHTML = SLOT_SETS[count].map(x => `
+    <label class="slot-time"><span>${esc(x.label)}</span>
+      <span class="inline">rappel à <input type="time" data-key="${count}${x.id}" value="${settings.slotTimes[count + x.id] || x.time}"></span></label>`).join('');
+}
+$('#s-slot-count').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-slotcount]'); if (b) renderSlotSettings(+b.dataset.slotcount);
+});
+
 function refreshAll() {
   resetCalibration();
   fillSettings(); renderSymptomInputs(); renderSignInputs(); fillForm(F.date.value || today()); renderStatus();
@@ -1007,7 +1134,9 @@ $('#settings').addEventListener('submit', async ev => {
     baseline: clamp(parseFloat(S.baseline.value) || DEFAULT_SETTINGS.baseline, 4, 12),
     psyName: S.psyName.value.trim(), psyTel: S.psyTel.value.trim(),
     famName: S.famName.value.trim(), famTel: S.famTel.value.trim(),
-    remind: S.remind.checked, remindTime: S.remindTime.value || '21:00',
+    remind: S.remind.checked,
+    slotCount: +($('[data-slotcount][aria-pressed="true"]') || { dataset: { slotcount: 1 } }).dataset.slotcount,
+    slotTimes: Object.assign({}, settings.slotTimes, Object.fromEntries($$('#s-slot-times input').filter(i => i.value).map(i => [i.dataset.key, i.value]))),
     symptoms: $$('#s-symptoms input:checked').map(i => i.value),
   });
   if (settings.remind && 'Notification' in window && Notification.permission === 'default') {
@@ -1071,20 +1200,31 @@ $('#d-csv').addEventListener('click', () => {
 });
 
 /* Vérifie et nettoie un relevé venant d'un fichier ; null s'il est inutilisable */
-function cleanEntry(e) {
+function cleanRecord(e) {
   if (!e || typeof e !== 'object') return null;
   const num = v => (typeof v === 'number' && isFinite(v) ? v : NaN);
-  const mood = num(e.mood), energy = num(e.energy), sleep = num(e.sleep);
-  if ([mood, energy, sleep].some(isNaN)) return null;
-  const out = {
-    mood: clamp(Math.round(mood), -3, 3), energy: clamp(Math.round(energy), -3, 3),
-    sleep: clamp(Math.round(sleep * 2) / 2, 0, 14),
-    meds: !!e.meds, note: typeof e.note === 'string' ? e.note.slice(0, 280) : '',
-  };
-  for (const x of SYMPTOMS) if (!isNaN(num(e[x.key]))) out[x.key] = clamp(Math.round(e[x.key]), 0, 3);
+  const mood = num(e.mood), energy = num(e.energy);
+  if (isNaN(mood) || isNaN(energy)) return null;
+  const out = { mood: clamp(round1(mood), -3, 3), energy: clamp(round1(energy), -3, 3) };
+  for (const x of SYMPTOMS) if (!isNaN(num(e[x.key]))) out[x.key] = clamp(round1(e[x.key]), 0, 3);
   if (Array.isArray(e.signs)) {
     const signs = e.signs.filter(id => typeof id === 'string').map(id => id.slice(0, 40)).slice(0, 30);
     if (signs.length) out.signs = signs;
+  }
+  if (typeof e.at === 'string' && /^\d{2}:\d{2}$/.test(e.at)) out.at = e.at;
+  return out;
+}
+/* Vérifie et nettoie un relevé venant d'un fichier ; null s'il est inutilisable */
+function cleanEntry(e) {
+  const base = cleanRecord(e);
+  const sleep = e && typeof e.sleep === 'number' && isFinite(e.sleep) ? e.sleep : NaN;
+  if (!base || isNaN(sleep)) return null;
+  const out = Object.assign(base, { sleep: clamp(Math.round(sleep * 2) / 2, 0, 14), meds: !!e.meds, note: typeof e.note === 'string' ? e.note.slice(0, 280) : '' });
+  delete out.at;
+  if (e.slots && typeof e.slots === 'object') {
+    const slots = {};
+    for (const id of SLOT_ORDER) { const r = cleanRecord(e.slots[id]); if (r) slots[id] = r; }
+    if (Object.keys(slots).length) { out.slots = slots; aggregateDay(out); }
   }
   return out;
 }
@@ -1196,20 +1336,61 @@ function demoYear() {
     for (const id of sgn.high) if (lvl.mood + lvl.energy > 1.6 && rnd() < 0.55) signs.push(id);
     for (const id of sgn.low) if (lvl.mood < -0.9 && rnd() < 0.5) signs.push(id);
     if (signs.length) out[d].signs = signs;
+    // 6 dernières semaines : 3 relevés par jour, avec des journées plus chahutées pendant l'hypomanie
+    if (i < 42) {
+      const swing = 0.6 + Math.max(0, lvl.mood) * 0.5 + (lvl.irrit > 1 ? 0.8 : 0);
+      const slots = {};
+      ['m', 'a', 's'].forEach((id, k) => {
+        const r = Object.assign({}, out[d], { at: ['12:40', '18:10', '22:05'][k] });
+        delete r.sleep; delete r.meds; delete r.note; delete r.slots;
+        r.mood = clamp(Math.round(out[d].mood + (k - 1) * 0.4 * swing + noise(swing * 1.4)), -3, 3);
+        r.energy = clamp(Math.round(out[d].energy + noise(swing)), -3, 3);
+        if (k !== 1) for (const x of SYMPTOMS) if (r[x.key] !== undefined) r[x.key] = clamp(Math.round(r[x.key] - rnd() * 0.8), 0, 3);
+        if (k !== 2) delete r.signs;
+        slots[id] = r;
+      });
+      out[d].slots = slots; aggregateDay(out[d]);
+    }
   }
   return out;
 }
 
-/* ---------- rappel du soir (si l'app est ouverte) ---------- */
-setInterval(() => {
-  if (!settings.remind || !('Notification' in window) || Notification.permission !== 'granted') return;
-  const now = new Date(), hhmm = now.toTimeString().slice(0, 5), d = today();
-  let last = ''; try { last = localStorage.getItem('bip.lastReminder') || ''; } catch (e) {}
-  if (hhmm >= settings.remindTime && !entries[d] && last !== d) {
-    try { new Notification('Bip', { body: 'Comment était ta journée ? 5 secondes pour la noter.', icon: 'icon.svg' }); } catch (e) {}
-    try { localStorage.setItem('bip.lastReminder', d); } catch (e) {}
+/* ---------- rappels (tant que l'app est ouverte ou en arrière-plan) ---------- */
+async function notify(title, body, slot) {
+  const opts = { body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'bip-' + slot, data: { slot } };
+  try {
+    const reg = 'serviceWorker' in navigator && await navigator.serviceWorker.getRegistration();
+    if (reg) { await reg.showNotification(title, opts); return; }
+  } catch (e) {}
+  try {
+    const n = new Notification(title, opts);
+    n.onclick = () => { window.focus(); openSlot(slot); n.close(); };
+  } catch (e) {}
+}
+function openSlot(slot) {
+  showTab('today');
+  fillForm(today(), settings.slotCount > 1 ? slot : undefined);
+}
+function checkReminders() {
+  if (DEMO || !settings.remind || !('Notification' in window) || Notification.permission !== 'granted') return;
+  const now = nowHHMM(), d = today(), e = entries[d] || {};
+  let sent = {}; try { sent = JSON.parse(localStorage.getItem('bip.reminded.v2') || '{}'); } catch (err) {}
+  if (sent.date !== d) sent = { date: d, slots: [] };
+  for (const x of activeSlots()) {
+    const done = settings.slotCount === 1 ? !!entries[d] : !!(e.slots && e.slots[x.id]);
+    // dans les 3 h qui suivent l'heure du rappel, une seule fois, et seulement si pas encore noté
+    if (done || sent.slots.includes(x.id) || now < x.time || now > addMin(x.time, 180)) continue;
+    notify('Bip', x.ask + ' 5 secondes pour le noter.', x.id);
+    sent.slots.push(x.id);
   }
-}, 60000);
+  try { localStorage.setItem('bip.reminded.v2', JSON.stringify(sent)); } catch (err) {}
+}
+setInterval(checkReminders, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkReminders(); });
+// clic sur une notification affichée par le service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', ev => { if (ev.data && ev.data.slot) openSlot(ev.data.slot); });
+}
 
 let resizeT;
 window.addEventListener('resize', () => {
@@ -1273,6 +1454,7 @@ async function askPersist() {
 /* ---------- démarrage ---------- */
 if (DEMO) {
   settings.symptoms = ['irrit', 'anxiety', 'thoughts', 'impuls', 'focus', 'stress'];
+  settings.slotCount = 3;
   settings.signs = [
     { id: 'dh1', text: 'Je fais plein de projets ou de listes', pole: 'high' },
     { id: 'dh2', text: 'Je dépense plus que d\'habitude', pole: 'high' },
@@ -1298,13 +1480,14 @@ renderSignInputs();
 if (!DEMO) renderInstall();
 askPersist();
 fillSettings();
-fillForm(today());
+const slotParam = new URLSearchParams(location.search).get('slot');
+fillForm(today(), slotParam && SLOT_SETS[settings.slotCount].some(x => x.id === slotParam) ? slotParam : undefined);
 renderStatus();
 let startTab = 'today';
-try { startTab = sessionStorage.getItem('bip.tab') || 'today'; } catch (e) {}
+if (!slotParam) { try { startTab = sessionStorage.getItem('bip.tab') || 'today'; } catch (e) {} }
 if (DEMO) { $('[data-range="365"]').click(); startTab = 'history'; }
 showTab(startTab);
-window.addEventListener('focus', () => { if (F.date.max !== today()) { fillForm(today()); renderStatus(); } });
+window.addEventListener('focus', () => { if (F.date.max !== today()) { fillForm(today()); renderStatus(); } checkReminders(); });
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -40,6 +40,8 @@
         <input type="date" id="f-date" required>
         <span id="f-saved" class="pill" hidden>déjà noté</span>
       </div>
+      <div id="slot-picker" class="slot-picker" role="group" aria-label="Moment de la journée" hidden></div>
+      <p id="f-slot-note" class="muted small" hidden>Ce jour a plusieurs relevés (matin, après-midi, soir). En enregistrer un seul ici les remplacera par une valeur pour toute la journée.</p>
 
       <div class="slider" data-key="mood">
         <div class="slider-head"><label for="f-mood">Humeur</label><output id="o-mood"></output></div>
@@ -95,13 +97,14 @@
         <span class="lg lg-line"></span>moyenne 7 jours
         <span class="lg lg-high"></span>zone haute
         <span class="lg lg-low"></span>zone basse
+        <span id="lg-range" hidden><span class="lg lg-range"></span>écart dans la journée</span>
       </p>
       <div class="chart" id="chart-mood"></div>
       <p id="cal-note" class="muted small cal-note"></p>
     </div>
     <div class="card">
       <h2>Sommeil (heures)</h2>
-      <p class="legend"><span class="lg lg-bar"></span>nuit <span class="lg lg-high"></span>≥ 2 h de moins <span class="lg lg-low"></span>≥ 2 h de plus <span class="lg lg-base"></span>sommeil habituel</p>
+      <p class="legend"><span class="lg lg-bar"></span>nuit <span class="lg lg-high"></span>nuit courte <span class="lg lg-low"></span>nuit longue <span class="lg lg-base"></span>sommeil habituel</p>
       <div class="chart" id="chart-sleep"></div>
     </div>
     <div class="card" id="card-symptoms">
@@ -151,9 +154,16 @@
       <label>Psychiatre – téléphone <input type="tel" id="s-psy-tel"></label>
       <label>Proche de confiance – nom <input type="text" id="s-fam-name"></label>
       <label>Proche de confiance – téléphone <input type="tel" id="s-fam-tel"></label>
-      <h2>Rappel</h2>
-      <label class="check"><input type="checkbox" id="s-remind"> Me rappeler le soir (si l'onglet est ouvert)</label>
-      <label>Heure du rappel <input type="time" id="s-remind-time"></label>
+      <h2>Relevés dans la journée</h2>
+      <p class="muted small" style="margin:0 0 8px">L'humeur peut changer au fil de la journée. Avec plusieurs relevés, l'humeur et l'énergie du jour sont la moyenne de vos relevés, les symptômes le maximum, et les grands écarts dans une même journée sont signalés.</p>
+      <div class="seg slot-count" id="s-slot-count" role="group" aria-label="Relevés par jour">
+        <button type="button" data-slotcount="1" aria-pressed="true">1 par jour</button>
+        <button type="button" data-slotcount="2" aria-pressed="false">2 par jour</button>
+        <button type="button" data-slotcount="3" aria-pressed="false">3 par jour</button>
+      </div>
+      <div id="s-slot-times" class="slot-times"></div>
+      <label class="check"><input type="checkbox" id="s-remind"> M'envoyer une notification à ces heures</label>
+      <p class="muted small" style="margin:0">Les notifications partent si vous n'avez pas encore noté ce moment-là. Sans serveur (vos données ne quittent pas le téléphone), elles ne fonctionnent que si l'app est ouverte ou encore en arrière-plan : iOS la met vite en veille.</p>
       <button type="submit" class="primary">Enregistrer les réglages</button>
       <p id="s-toast" class="toast" role="status" aria-live="polite"></p>
     </form>

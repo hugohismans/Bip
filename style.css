@@ -52,6 +52,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
@@ -293,3 +294,13 @@ button.primary-sm { background: var(--accent); color: var(--accent-ink); border-
 .action .act { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .action .act a { font-size: 14px; font-weight: 600; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; text-decoration: none; }
 .action a { color: var(--text-2); }
+
+/* Moments de la journée */
+.slot-picker { display: flex; gap: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin: 4px 0 6px; }
+.slot-picker button { flex: 1; border: 0; border-radius: 0; padding: 10px 4px; background: transparent; color: var(--text-2); font-size: 14px; }
+.slot-picker button + button { border-left: 1px solid var(--border); }
+.slot-picker button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.slot-count { display: inline-flex; margin-bottom: 8px; }
+.slot-times { margin-bottom: 6px; }
+#settings .slot-time { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--text); padding: 4px 0; border-bottom: 1px solid var(--grid); margin: 0; }
+.lg-range { width: 2px; height: 12px; background: var(--neutral); border-radius: 1px; }
