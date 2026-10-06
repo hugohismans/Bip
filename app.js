@@ -54,6 +54,7 @@ const DEFAULT_SETTINGS = {
   signs: [],                 // signes d'alerte personnels { id, text, pole: 'high'|'low', archived? }
   planHigh: '', planLow: '', // plan d'action écrit avec le psychiatre
   consults: [],              // dates des consultations (pour le récapitulatif)
+  treatments: [],            // périodes de traitement { id, date, lines: [{ name, dose, when }], note }
   reportName: '',
 };
 
@@ -110,6 +111,12 @@ function normSettings(o) {
   st.planLow = typeof st.planLow === 'string' ? st.planLow.slice(0, 1000) : '';
   st.consults = (Array.isArray(st.consults) ? st.consults : []).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
   st.reportName = typeof st.reportName === 'string' ? st.reportName.slice(0, 80) : '';
+  const str = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
+  st.treatments = (Array.isArray(st.treatments) ? st.treatments : [])
+    .filter(t => t && /^\d{4}-\d{2}-\d{2}$/.test(t.date) && Array.isArray(t.lines))
+    .map(t => ({ id: str(t.id, 40) || 't' + t.date, date: t.date, note: str(t.note, 300),
+      lines: t.lines.filter(l => l && str(l.name, 60)).slice(0, 20).map(l => ({ name: str(l.name, 60), dose: str(l.dose, 40), when: str(l.when, 40) })) }))
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
   return st;
 }
 
@@ -159,10 +166,12 @@ function dayRange(e) {
    Chacun utilise les échelles à sa façon : quelqu'un qui ne note jamais 3 signale
    déjà quelque chose avec un 1 ; quelqu'un qui note souvent 3 doit s'écarter davantage.
    On apprend donc, sur les 6 derniers mois, le point de repère (médiane) et l'amplitude
-   habituelle (écart moyen à la médiane) de chaque curseur, puis on raisonne en écarts.
-   Garde-fous : le repère de l'humeur et de l'énergie ne peut pas s'éloigner de plus de 1
-   de la neutralité, et l'amplitude est bornée, pour qu'une longue phase basse ou haute
-   ne devienne pas « la normale » et ne fasse pas taire les alertes. */
+   habituelle (écart moyen à la médiane) de chaque curseur.
+   - Symptômes : on raisonne en écart au repère, dans les deux sens (un 3 compte moins
+     chez qui note souvent 3, un 1 compte plus chez qui ne note jamais).
+   - Humeur, énergie, sommeil : l'ajustement peut seulement rendre plus attentif (amplitude
+     habituelle < 1), jamais moins. Sinon une longue phase basse ou haute finirait par
+     devenir « la normale » et ferait taire les alertes. */
 const CAL_MIN = 21, CAL_WINDOW = 180;
 let calCache = null;
 function median(a) { const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; }
@@ -175,11 +184,11 @@ function calibration() {
   if (c.on && list.length >= CAL_MIN) {
     c.active = true;
     for (const k of ['mood', 'energy']) {
-      const v = list.map(e => e[k]), med = median(v);
-      c.dims[k] = { center: clamp(med, -1, 1), scale: clamp(spread(v, med), 0.6, 1.5) };
+      const v = list.map(e => e[k]);
+      c.dims[k] = { center: 0, scale: clamp(spread(v, median(v)), 0.6, 1) };
     }
     const sl = list.map(e => e.sleep);
-    c.dims.sleep = { center: settings.baseline, scale: clamp(spread(sl, median(sl)), 0.75, 2) };
+    c.dims.sleep = { center: settings.baseline, scale: clamp(spread(sl, median(sl)), 0.75, 1) };
     for (const x of SYMPTOMS) {
       const v = list.filter(e => e[x.key] !== undefined).map(e => e[x.key]);
       if (v.length < CAL_MIN) continue;
@@ -195,7 +204,7 @@ function resetCalibration() { calCache = null; }
 function effMood(e) { const d = calibration().dims.mood; return d ? clamp((e.mood - d.center) / d.scale, -3, 3) : e.mood; }
 function effEnergy(e) { const d = calibration().dims.energy; return d ? clamp((e.energy - d.center) / d.scale, -3, 3) : e.energy; }
 function sleepScore(e) { const d = calibration().dims.sleep; return clamp((settings.baseline - e.sleep) / (d ? d.scale : 1), -3, 3); }
-/* Nuit nettement plus courte / plus longue que d'habitude (2 h, ou 2 « écarts habituels » si étalonné) */
+/* Nuit nettement plus courte / plus longue que d'habitude : 2 h, ou dès 1 h 30 chez qui dort très régulièrement */
 function shortNight(e) { const d = calibration().dims.sleep, gap = settings.baseline - e.sleep; return d ? gap >= 1.5 && gap / d.scale >= 2 : gap >= 2; }
 function longNight(e) { const d = calibration().dims.sleep, gap = e.sleep - settings.baseline; return d ? gap >= 1.5 && gap / d.scale >= 2 : gap >= 2; }
 /* Symptôme inhabituellement présent pour CE patient */
@@ -684,6 +693,7 @@ function renderHistory() {
   drawMood(days, any);
   drawSleep(days, any);
   drawSymptoms(days, any);
+  renderTreatImpact();
   renderTable();
 }
 
@@ -784,6 +794,13 @@ function drawMood(days, any, box = $('#chart-mood')) {
   });
   el('path', { d: path, fill: 'none', stroke: 'var(--line)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
 
+  // changements de traitement : ligne verticale pointillée + 💊
+  const changes = days.map((d, i) => [d, i]).filter(([d]) => settings.treatments.some((t, k) => k > 0 && t.date === d));
+  const lt = $('#lg-treat'); if (lt && box.id === 'chart-mood') lt.hidden = !changes.length;
+  for (const [, i] of changes) {
+    el('line', { x1: x(i), x2: x(i), y1: m.t, y2: m.t + ih, stroke: 'var(--text-2)', 'stroke-width': 1.5, 'stroke-dasharray': '4 3' }, svg);
+    el('text', { x: x(i), y: m.t + 12, 'text-anchor': 'middle', class: 'pill-ic' }, svg).textContent = '💊';
+  }
   // écart dans la journée : trait vertical entre le relevé le plus bas et le plus haut
   const leg = $('#lg-range');
   if (leg && box.id === 'chart-mood') leg.hidden = !days.some(d => entries[d] && dayRange(entries[d]) > 0);
@@ -802,13 +819,14 @@ function drawMood(days, any, box = $('#chart-mood')) {
   attachHover(svg, box, W, days, x, m, ih, i => {
     const d = days[i], e = entries[d];
     const avg = avgs[i];
-    if (!e) return `<b>${fmtLong(d)}</b><br>pas de relevé` + (avg !== null ? `<br>moyenne 7 j : <b>${fmtNum(avg)}</b>` : '');
+    const ch = treatChangeOn(d), chTxt = ch && settings.treatments.indexOf(ch.t) > 0 ? `<br>💊 <b>Changement de traitement</b><br>${ch.diff.map(x => esc(x.text)).join('<br>')}` : '';
+    if (!e) return `<b>${fmtLong(d)}</b><br>pas de relevé` + (avg !== null ? `<br>moyenne 7 j : <b>${fmtNum(avg)}</b>` : '') + chTxt;
     return `<b>${fmtLong(d)}</b><br>indice <b>${fmtNum(dayIndex(e))}</b>` + (avg !== null ? ` · moy. 7 j <b>${fmtNum(avg)}</b>` : '') +
       `<br>humeur ${MOOD_LABELS[Math.round(e.mood)]} · énergie ${ENERGY_LABELS[Math.round(e.energy)]}<br>sommeil ${fmtH(e.sleep)}` +
       (slotsSummary(e) ? `<br>${slotsSummary(e)}` : '') +
       (symSummary(e) ? `<br>${symSummary(e)}` : '') +
       (signsSummary(e) ? `<br>signes : ${signsSummary(e)}` : '') +
-      (e.note ? `<br><i>${esc(e.note)}</i>` : '');
+      (e.note ? `<br><i>${esc(e.note)}</i>` : '') + chTxt;
   });
 }
 
@@ -891,6 +909,164 @@ function signCounts(e) {
 $('#log').addEventListener('click', ev => {
   const b = ev.target.closest('[data-edit]');
   if (b) { showTab('today'); fillForm(b.dataset.edit); }
+});
+
+/* ---------- traitement ---------- */
+/* Traitement en cours à une date : la dernière période commencée ce jour-là ou avant */
+function treatmentOn(date) {
+  let cur = null;
+  for (const t of settings.treatments) if (t.date <= date) cur = t;
+  return cur;
+}
+function lineText(l) { return [l.name, l.dose, l.when].filter(Boolean).join(' · '); }
+function treatText(t) { return t && t.lines.length ? t.lines.map(lineText).join(' ; ') : 'aucun traitement'; }
+/* Ce qui change d'une période à l'autre : ajouts, arrêts, doses / moments modifiés */
+function treatDiff(prev, cur) {
+  const key = l => l.name.toLowerCase();
+  const before = new Map((prev ? prev.lines : []).map(l => [key(l), l]));
+  const after = new Map(cur.lines.map(l => [key(l), l]));
+  const out = [];
+  for (const [k, l] of after) {
+    const o = before.get(k);
+    if (!o) out.push({ kind: 'add', text: `+ ${lineText(l)}` });
+    else if (o.dose !== l.dose || o.when !== l.when) {
+      out.push({ kind: 'mod', text: `${l.name} : ${[o.dose, o.when].filter(Boolean).join(' · ') || '—'} → ${[l.dose, l.when].filter(Boolean).join(' · ') || '—'}` });
+    }
+  }
+  for (const [k, l] of before) if (!after.has(k)) out.push({ kind: 'stop', text: `− arrêt ${l.name}` });
+  if (!prev) return [{ kind: 'start', text: `Début du suivi : ${treatText(cur)}` }];
+  return out.length ? out : [{ kind: 'same', text: 'Pas de changement de médicament' }];
+}
+function treatChangeOn(date) {
+  const i = settings.treatments.findIndex(t => t.date === date);
+  return i < 0 ? null : { t: settings.treatments[i], diff: treatDiff(settings.treatments[i - 1], settings.treatments[i]) };
+}
+
+/* Comparaison avant / après un changement : 28 jours de chaque côté (ou jusqu'au changement suivant) */
+const IMPACT_DAYS = 28;
+function periodStats(from, to) {
+  const es = periodDays(from, to).filter(d => entries[d]).map(d => entries[d]);
+  if (es.length < 7) return { n: es.length, ok: false };
+  const idx = es.map(dayIndex), avg = a => a.reduce((x, y) => x + y, 0) / a.length, m = avg(idx);
+  return {
+    n: es.length, ok: true, avg: m,
+    sd: Math.sqrt(avg(idx.map(v => (v - m) ** 2))),
+    hi: idx.filter(v => v >= 1).length / es.length, lo: idx.filter(v => v <= -1).length / es.length,
+    sleep: avg(es.map(e => e.sleep)),
+  };
+}
+function treatImpact(i) {
+  const t = settings.treatments[i], next = settings.treatments[i + 1];
+  const prev = settings.treatments[i - 1];
+  const beforeFrom = addDays(t.date, -IMPACT_DAYS), beforeTo = addDays(t.date, -1);
+  const afterTo = [addDays(t.date, IMPACT_DAYS - 1), today(), next ? addDays(next.date, -1) : '9999'].sort()[0];
+  return {
+    before: periodStats(prev && prev.date > beforeFrom ? prev.date : beforeFrom, beforeTo),
+    after: periodStats(t.date, afterTo),
+    afterDays: diffDays(afterTo, t.date) + 1,
+  };
+}
+function impactHtml(i) {
+  const t = settings.treatments[i], { before: b, after: a, afterDays } = treatImpact(i);
+  const diff = treatDiff(settings.treatments[i - 1], t);
+  const pc = v => Math.round(v * 100) + ' %';
+  const cell = (st, f) => (st.ok ? f(st) : '—');
+  const row = (label, f, better) => {
+    let arrow = '';
+    if (b.ok && a.ok && better) { const d = better(a) - better(b); arrow = Math.abs(d) < 0.05 ? '' : d > 0 ? ' <span class="better">mieux</span>' : ' <span class="worse">moins bien</span>'; }
+    return `<tr><th>${label}</th><td>${cell(b, f)}</td><td>${cell(a, f)}${arrow}</td></tr>`;
+  };
+  const body = (b.ok || a.ok) ? `<table class="impact"><thead><tr><th></th><th>${IMPACT_DAYS} j avant</th><th>${afterDays < IMPACT_DAYS ? afterDays + ' j' : IMPACT_DAYS + ' j'} après</th></tr></thead><tbody>
+      ${row('Jours notés', s2 => s2.n)}
+      ${row('Indice moyen', s2 => fmtNum(s2.avg), s2 => -Math.abs(s2.avg))}
+      ${row('Jours en zone haute', s2 => pc(s2.hi), s2 => -s2.hi)}
+      ${row('Jours en zone basse', s2 => pc(s2.lo), s2 => -s2.lo)}
+      ${row('Variabilité de l\'humeur', s2 => s2.sd.toFixed(1).replace('.', ','), s2 => -s2.sd)}
+      ${row('Sommeil moyen', s2 => fmtH(Math.round(s2.sleep * 10) / 10))}
+    </tbody></table>${!b.ok || !a.ok ? '<p class="muted small">Il faut au moins 7 jours notés de chaque côté pour comparer.</p>' : ''}`
+    : '<p class="muted small">Pas encore assez de relevés autour de cette date pour comparer (7 jours de chaque côté).</p>';
+  return `<div class="impact-item"><p class="small"><b>💊 ${fmtShort(t.date)} ${fromStr(t.date).getFullYear()}</b> · ${diff.map(d => esc(d.text)).join(' · ')}</p>
+    ${t.note ? `<p class="muted small">${esc(t.note)}</p>` : ''}${body}</div>`;
+}
+function renderTreatImpact() {
+  const card = $('#card-treat-impact'), list = settings.treatments;
+  const idx = list.map((_, i) => i).filter(i => i > 0).reverse();   // la 1re période n'est pas un changement
+  card.hidden = !idx.length;
+  if (!idx.length) return;
+  $('#treat-impact').innerHTML = idx.map(impactHtml).join('') +
+    '<p class="muted small">« Mieux » = plus proche de la stabilité (indice près de 0, moins de jours en zone haute ou basse, moins de variabilité). Un traitement peut mettre plusieurs semaines à agir, et d\'autres choses changent en même temps : c\'est une piste à discuter avec votre psychiatre, pas une preuve.</p>';
+}
+
+/* ---------- réglages : mon traitement ---------- */
+let editingTreat = false;
+function renderTreatCard() {
+  const cur = treatmentOn(today()), list = settings.treatments;
+  const box = $('#treat-current');
+  if (!list.length) {
+    box.innerHTML = `<p class="muted small">Indiquez ce que vous prenez actuellement. À chaque changement (dose, ajout, arrêt), notez-le : une ligne apparaîtra sur le graphe et Bip comparera les semaines avant et après.</p>
+      <button type="button" class="primary-sm" data-treat-edit>Définir mon traitement actuel</button>`;
+  } else {
+    box.innerHTML = `<p class="small">Depuis le <b>${fmtShort(cur ? cur.date : list[0].date)}</b> :</p>
+      ${cur && cur.lines.length ? `<ul class="treat-lines">${cur.lines.map(l => `<li><b>${esc(l.name)}</b>${l.dose ? ' · ' + esc(l.dose) : ''}${l.when ? ' · <span class="muted">' + esc(l.when) + '</span>' : ''}</li>`).join('')}</ul>` : '<p class="small">Aucun traitement.</p>'}
+      <button type="button" class="primary-sm" data-treat-edit>💊 Changement de traitement</button>`;
+  }
+  $('#treat-editor').hidden = !editingTreat;
+  box.hidden = editingTreat;
+  $('#treat-history').innerHTML = list.length > 1 || (list.length === 1 && !editingTreat) ? `<h3 class="small" style="margin:14px 0 4px">Historique</h3>
+    <ul class="treat-hist">${list.map((t, i) => ({ t, i })).reverse().map(({ t, i }) => `<li>
+      <span class="th-date">${fmtShort(t.date)} ${fromStr(t.date).getFullYear()}</span>
+      <span class="th-diff">${treatDiff(list[i - 1], t).map(d => `<span class="d-${d.kind}">${esc(d.text)}</span>`).join('<br>')}${t.note ? `<br><span class="muted">${esc(t.note)}</span>` : ''}</span>
+      <button type="button" class="x" data-treat-del="${t.id}" aria-label="Supprimer">✕</button></li>`).join('')}</ul>` : '';
+  const f = $('#f-treat');
+  if (f) f.innerHTML = cur ? `Mon traitement : ${esc(treatText(cur))} · <a href="#" data-goto-treat>changer</a>` : `<a href="#" data-goto-treat>Indiquer mon traitement</a>`;
+}
+function lineRow(l = { name: '', dose: '', when: '' }) {
+  return `<div class="te-line">
+    <input type="text" class="te-name" list="med-names" maxlength="60" placeholder="Médicament" value="${esc(l.name)}" aria-label="Médicament">
+    <input type="text" class="te-dose" maxlength="40" placeholder="Dose (ex. 400 mg)" value="${esc(l.dose)}" aria-label="Dose">
+    <input type="text" class="te-when" maxlength="40" placeholder="Quand (ex. matin et soir)" value="${esc(l.when)}" aria-label="Moment de prise">
+    <button type="button" class="x" data-line-del aria-label="Retirer">✕</button></div>`;
+}
+function openTreatEditor() {
+  const cur = treatmentOn(today());
+  editingTreat = true;
+  $('#te-title').textContent = settings.treatments.length ? 'Changement de traitement' : 'Mon traitement actuel';
+  $('#te-date').value = today(); $('#te-date').max = today();
+  $('#te-note').value = '';
+  $('#te-lines').innerHTML = (cur && cur.lines.length ? cur.lines : [undefined]).map(lineRow).join('');
+  renderTreatCard();
+  $('#te-lines input').focus();
+}
+document.addEventListener('click', ev => {
+  if (ev.target.closest('[data-treat-edit]')) openTreatEditor();
+  if (ev.target.closest('[data-goto-treat]')) {
+    ev.preventDefault(); showTab('settings');
+    $('#treat-card').scrollIntoView({ block: 'start' });
+  }
+});
+$('#te-add').addEventListener('click', () => { $('#te-lines').insertAdjacentHTML('beforeend', lineRow()); $$('#te-lines .te-name').pop().focus(); });
+$('#te-lines').addEventListener('click', ev => { const b = ev.target.closest('[data-line-del]'); if (b) b.parentElement.remove(); });
+$('#te-cancel').addEventListener('click', () => { editingTreat = false; renderTreatCard(); });
+$('#te-save').addEventListener('click', () => {
+  const date = $('#te-date').value || today();
+  const lines = $$('#te-lines .te-line').map(r => ({
+    name: r.querySelector('.te-name').value.trim().slice(0, 60),
+    dose: r.querySelector('.te-dose').value.trim().slice(0, 40),
+    when: r.querySelector('.te-when').value.trim().slice(0, 40),
+  })).filter(l => l.name);
+  const t = { id: newId(), date, lines, note: $('#te-note').value.trim().slice(0, 300) };
+  // une seule période par date : un nouvel enregistrement le même jour remplace le précédent
+  settings.treatments = settings.treatments.filter(x => x.date !== date).concat(t).sort((a, b) => (a.date < b.date ? -1 : 1));
+  saveSettings();
+  editingTreat = false; renderTreatCard();
+  flash('#treat-toast', settings.treatments.length > 1 ? 'Changement enregistré ✓ Il apparaît sur le graphe.' : 'Traitement enregistré ✓');
+});
+$('#treat-history').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-treat-del]'); if (!b) return;
+  const t = settings.treatments.find(x => x.id === b.dataset.treatDel);
+  if (!t || !confirm(`Supprimer l'entrée de traitement du ${fmtShort(t.date)} ?`)) return;
+  settings.treatments = settings.treatments.filter(x => x !== t);
+  saveSettings(); renderTreatCard();
 });
 
 /* ---------- récapitulatif de consultation ---------- */
@@ -1000,7 +1176,7 @@ function renderReport() {
     </section>
 
     <section class="rp-sec"><h2>Indice d'humeur</h2>
-      <p class="legend"><span class="lg lg-dot"></span>jour <span class="lg lg-line"></span>moyenne 7 jours <span class="lg lg-high"></span>zone haute <span class="lg lg-low"></span>zone basse${es.some(e => dayRange(e) > 0) ? ' <span class="lg lg-range"></span>écart dans la journée' : ''}</p>
+      <p class="legend"><span class="lg lg-dot"></span>jour <span class="lg lg-line"></span>moyenne 7 jours <span class="lg lg-high"></span>zone haute <span class="lg lg-low"></span>zone basse${es.some(e => dayRange(e) > 0) ? ' <span class="lg lg-range"></span>écart dans la journée' : ''}${settings.treatments.some((t, i) => i > 0 && t.date >= from && t.date <= to) ? ' <span class="lg lg-treat"></span>changement de traitement' : ''}</p>
       <div class="chart" id="rp-mood"></div></section>
     <section class="rp-sec"><h2>Sommeil (heures)</h2>
       <p class="legend"><span class="lg lg-bar"></span>nuit <span class="lg lg-high"></span>courte <span class="lg lg-low"></span>longue <span class="lg lg-base"></span>sommeil habituel</p>
@@ -1012,6 +1188,11 @@ function renderReport() {
         <p class="muted small">* Inhabituel au regard de la façon de noter du patient${cal.active ? '' : ' (étalonnage pas encore actif : seuil « nettement »)'}.</p>` : ''}
     </section>
     ${signRows ? `<section class="rp-sec"><h2>Signes d'alerte personnels</h2><table class="rp-table"><thead><tr><th>Phase</th><th>Signe</th><th>Jours</th></tr></thead><tbody>${signRows}</tbody></table></section>` : ''}
+    ${settings.treatments.length ? `<section class="rp-sec"><h2>Traitement</h2>
+      <p class="small"><b>Au ${fmtShort(to)} :</b> ${esc(treatText(treatmentOn(to)))}</p>
+      ${settings.treatments.map((t, i) => ({ t, i })).filter(({ t, i }) => i > 0 && t.date >= from && t.date <= to).map(({ i }) => impactHtml(i)).join('') ||
+        '<p class="muted small">Pas de changement de traitement sur la période.</p>'}
+    </section>` : ''}
     ${settings.planHigh || settings.planLow ? `<section class="rp-sec"><h2>Plan d'action</h2>
       ${settings.planHigh ? `<p class="small"><b>Phase haute :</b> ${esc(settings.planHigh).replace(/\n/g, '<br>')}</p>` : ''}
       ${settings.planLow ? `<p class="small"><b>Phase basse :</b> ${esc(settings.planLow).replace(/\n/g, '<br>')}</p>` : ''}</section>` : ''}
@@ -1038,7 +1219,7 @@ function fillSettings() {
   S.famName.value = settings.famName; S.famTel.value = settings.famTel;
   S.remind.checked = settings.remind;
   renderSlotSettings(settings.slotCount);
-  renderCalCard(); renderSignsCard();
+  renderCalCard(); renderSignsCard(); renderTreatCard();
   $('#s-symptoms').innerHTML = SYMPTOMS.map(x => `
     <label class="check sym-opt"><input type="checkbox" value="${x.key}" ${settings.symptoms.includes(x.key) ? 'checked' : ''}>
       <span><b>${esc(x.label)}</b>${x.def ? ' <span class="pill">conseillé</span>' : ''}<br><span class="muted">${esc(x.hint)}</span></span></label>`).join('');
@@ -1072,9 +1253,9 @@ function renderCalCard() {
   const f = v => fmtNum(v).replace(',0', '');
   const dm = c.dims.mood, de = c.dims.energy, ds = c.dims.sleep;
   const rows = [
-    ['Humeur', `repère ${f(dm.center)}`, `un +1 compte pour ${f((1 - dm.center) / dm.scale)}, un −1 pour ${f((-1 - dm.center) / dm.scale)}`],
-    ['Énergie', `repère ${f(de.center)}`, `un +1 compte pour ${f((1 - de.center) / de.scale)}, un −1 pour ${f((-1 - de.center) / de.scale)}`],
-    ['Sommeil', `vos nuits varient d'environ ±${(ds.scale / 1.25).toFixed(1).replace('.', ',')} h`, `1 h de moins compte pour ${f(1 / ds.scale)} ; nuit « courte » à partir de −${fmtH(Math.max(1.5, Math.ceil(2 * ds.scale * 2) / 2))}`],
+    ['Humeur', dm.scale < 1 ? 'vous notez de façon mesurée' : 'vous utilisez toute l\'échelle', dm.scale < 1 ? `un ±1 compte pour ±${f(1 / dm.scale).replace('+', '')}` : 'notes prises telles quelles'],
+    ['Énergie', de.scale < 1 ? 'vous notez de façon mesurée' : 'vous utilisez toute l\'échelle', de.scale < 1 ? `un ±1 compte pour ±${f(1 / de.scale).replace('+', '')}` : 'notes prises telles quelles'],
+    ['Sommeil', ds.scale < 1 ? 'nuits très régulières' : 'nuits variables', `1 h de moins compte pour ${f(1 / ds.scale)} ; nuit « courte » à partir de −${fmtH(Math.max(1.5, Math.ceil(2 * ds.scale * 2) / 2))}`],
   ];
   for (const x of SYMPTOMS) {
     const d = c.dims[x.key]; if (!d) continue;
@@ -1189,11 +1370,11 @@ $('#d-export').addEventListener('click', exportBackup);
 document.addEventListener('click', ev => { if (ev.target.closest('[data-backup]')) exportBackup(); });
 
 $('#d-csv').addEventListener('click', () => {
-  const rows = [['date', 'humeur', 'energie', 'sommeil_h', ...SYMPTOMS.map(x => x.key), 'signes_haute', 'signes_basse', 'traitement_pris', 'indice', 'moyenne_7j', 'note']];
+  const rows = [['date', 'humeur', 'energie', 'sommeil_h', ...SYMPTOMS.map(x => x.key), 'signes_haute', 'signes_basse', 'traitement_pris', 'traitement', 'indice', 'moyenne_7j', 'note']];
   for (const d of Object.keys(entries).sort()) {
     const e = entries[d], w = avgWindow(d, 7);
     rows.push([d, e.mood, e.energy, e.sleep, ...SYMPTOMS.map(x => e[x.key] === undefined ? '' : e[x.key]),
-      ...['high', 'low'].map(p => (e.signs || []).map(signById).filter(g => g && g.pole === p).map(g => g.text).join(' / ')), e.meds ? 'oui' : 'non', dayIndex(e), w.n >= 3 ? w.avg.toFixed(2) : '', e.note || '']);
+      ...['high', 'low'].map(p => (e.signs || []).map(signById).filter(g => g && g.pole === p).map(g => g.text).join(' / ')), e.meds ? 'oui' : 'non', treatmentOn(d) ? treatText(treatmentOn(d)) : '', dayIndex(e), w.n >= 3 ? w.avg.toFixed(2) : '', e.note || '']);
   }
   const csv = rows.map(r => r.map(c => /[",;\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : c).join(';')).join('\n');
   saveFile(`bip-humeur-${today()}.csv`, '﻿' + csv, 'text/csv');
@@ -1466,6 +1647,12 @@ if (DEMO) {
   settings.planHigh = 'Coucher 23 h sans écran. Pas d\'achat de plus de 50 € avant 48 h. J\'appelle le Dr Martin et je préviens Léa.';
   settings.planLow = 'Lever 8 h quoi qu\'il arrive, 20 min de marche dehors, un appel à un proche par jour. Rendez-vous avec le Dr Martin.';
   settings.consults = [addDays(today(), -91)];
+  settings.treatments = [
+    { id: 'dt1', date: addDays(today(), -364), note: '', lines: [{ name: 'Lamotrigine (Lamictal)', dose: '100 mg', when: 'matin' }] },
+    { id: 'dt2', date: addDays(today(), -296), note: 'Augmentation après la phase basse de l\'automne.', lines: [{ name: 'Lamotrigine (Lamictal)', dose: '200 mg', when: 'matin' }] },
+    { id: 'dt3', date: addDays(today(), -150), note: 'Ajout après l\'épisode mixte, pour le sommeil et l\'agitation.', lines: [{ name: 'Lamotrigine (Lamictal)', dose: '200 mg', when: 'matin' }, { name: 'Quétiapine (Xeroquel)', dose: '50 mg', when: 'soir' }] },
+    { id: 'dt4', date: addDays(today(), -60), note: 'Arrêt progressif : somnolence le matin.', lines: [{ name: 'Lamotrigine (Lamictal)', dose: '200 mg', when: 'matin' }] },
+  ];
   settings.reportName = 'Démo';
   entries = demoYear();
   document.title = 'Bip – démo';

@@ -33,6 +33,14 @@ chacun avec son heure de rappel. L'écran de saisie propose automatiquement le b
 - Notification par moment (« Comment s'est passée ta matinée ? »…) si ce moment n'est pas encore noté,
   dans les 3 h qui suivent. Sans serveur, elles ne partent que si l'app est ouverte ou en arrière-plan.
 
+## Traitement
+
+*Réglages → Mon traitement* : on indique ce qu'on prend (médicament, dose, moment) et depuis quand,
+puis chaque **changement de traitement** (ajout, arrêt, dose) avec sa date et une note. Chaque changement
+trace une ligne 💊 sur le graphe d'humeur, et la carte *Effet des changements de traitement* compare
+les 28 jours avant et après : indice moyen, jours en zone haute / basse, variabilité, sommeil.
+À discuter avec son psychiatre : un traitement peut mettre des semaines à agir.
+
 ## Ma façon de noter (étalonnage personnel)
 
 Chacun utilise les curseurs à sa façon. Après 21 relevés, Bip apprend sur les 6 derniers mois
@@ -41,11 +49,12 @@ et raisonne ensuite en écarts à ces habitudes :
 
 - quelqu'un qui ne note presque jamais l'irritabilité : un **1** compte déjà comme un signal ;
 - quelqu'un qui la note souvent à 2 : il faut un **3** pour déclencher une alerte ;
-- humeur et énergie : un +1 pèse plus chez quelqu'un de très mesuré ;
+- humeur et énergie : un +1 pèse plus chez quelqu'un de très mesuré (jamais moins chez les autres) ;
 - sommeil : une « nuit courte » dépend de la régularité habituelle des nuits.
 
-Garde-fous : le repère de l'humeur et de l'énergie ne peut pas s'éloigner de plus de 1 de la neutralité
-et l'amplitude est bornée, pour qu'une longue phase basse ou haute ne devienne pas « la normale ».
+Garde-fou : pour l'humeur, l'énergie et le sommeil, l'ajustement peut seulement rendre plus attentif
+(chez quelqu'un de mesuré), jamais moins, pour qu'une longue phase basse ou haute ne devienne pas
+« la normale » et ne fasse pas taire les alertes. L'ajustement dans les deux sens ne concerne que les symptômes.
 Le détail est visible (et désactivable) dans *Réglages → Ma façon de noter*.
 
 ## Signes d'alerte personnels et plan d'action

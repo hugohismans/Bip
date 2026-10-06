@@ -67,6 +67,7 @@
       <details class="more">
         <summary>+ Note, traitement (facultatif)</summary>
         <label class="check"><input type="checkbox" id="f-meds"> Traitement pris comme prévu</label>
+        <p id="f-treat" class="muted small f-treat"></p>
         <textarea id="f-note" rows="2" maxlength="280" placeholder="Événement, stress, alcool, voyage…"></textarea>
       </details>
 
@@ -98,6 +99,7 @@
         <span class="lg lg-high"></span>zone haute
         <span class="lg lg-low"></span>zone basse
         <span id="lg-range" hidden><span class="lg lg-range"></span>écart dans la journée</span>
+        <span id="lg-treat" hidden><span class="lg lg-treat"></span>changement de traitement</span>
       </p>
       <div class="chart" id="chart-mood"></div>
       <p id="cal-note" class="muted small cal-note"></p>
@@ -106,6 +108,10 @@
       <h2>Sommeil (heures)</h2>
       <p class="legend"><span class="lg lg-bar"></span>nuit <span class="lg lg-high"></span>nuit courte <span class="lg lg-low"></span>nuit longue <span class="lg lg-base"></span>sommeil habituel</p>
       <div class="chart" id="chart-sleep"></div>
+    </div>
+    <div class="card" id="card-treat-impact" hidden>
+      <h2>Effet des changements de traitement</h2>
+      <div id="treat-impact"></div>
     </div>
     <div class="card" id="card-symptoms">
       <h2>Symptômes</h2>
@@ -168,6 +174,31 @@
       <p id="s-toast" class="toast" role="status" aria-live="polite"></p>
     </form>
 
+    <div class="card" id="treat-card">
+      <h2>Mon traitement</h2>
+      <div id="treat-current"></div>
+      <div id="treat-editor" class="treat-editor" hidden>
+        <h3 id="te-title">Changement de traitement</h3>
+        <label class="te-date">À partir du <input type="date" id="te-date"></label>
+        <div id="te-lines"></div>
+        <button type="button" id="te-add">+ Ajouter un médicament</button>
+        <label class="plan-label">Pourquoi ce changement ? <span class="muted">(facultatif)</span>
+          <textarea id="te-note" rows="2" maxlength="300" placeholder="Ex. : dose augmentée par le Dr X après la phase basse ; arrêt pour effets secondaires…"></textarea></label>
+        <div class="btns">
+          <button type="button" class="primary-sm" id="te-save">Enregistrer</button>
+          <button type="button" id="te-cancel">Annuler</button>
+        </div>
+        <datalist id="med-names">
+          <option value="Lithium"><option value="Téralithe (lithium)"><option value="Lamotrigine (Lamictal)"><option value="Valproate (Dépakote)">
+          <option value="Divalproate (Dépakote)"><option value="Quétiapine (Xeroquel)"><option value="Aripiprazole (Abilify)">
+          <option value="Olanzapine (Zyprexa)"><option value="Rispéridone (Risperdal)"><option value="Carbamazépine (Tégrétol)">
+          <option value="Lurasidone (Latuda)"><option value="Cariprazine (Reagila)"><option value="Mélatonine">
+        </datalist>
+      </div>
+      <p id="treat-toast" class="toast" role="status" aria-live="polite"></p>
+      <div id="treat-history"></div>
+    </div>
+
     <div class="card" id="signs-card">
       <h2>Mes signes d'alerte</h2>
       <p class="muted small">Les petits changements qui, chez <b>vous</b>, annoncent une phase haute ou basse. À choisir idéalement avec votre psychiatre ou vos proches. Ils apparaîtront sur la saisie du soir, à cocher en un geste.</p>
@@ -190,7 +221,7 @@
 
     <div class="card" id="cal-card">
       <h2>Ma façon de noter</h2>
-      <p class="muted small">Chacun utilise les curseurs à sa façon. Bip apprend la vôtre sur les 6 derniers mois : si vous ne notez presque jamais un symptôme, un 1 compte déjà comme un signal ; si vous le notez souvent à 3, il faudra s'écarter davantage pour déclencher une alerte. Pour qu'une longue phase basse ou haute ne devienne pas « la normale », l'ajustement est limité.</p>
+      <p class="muted small">Chacun utilise les curseurs à sa façon. Bip apprend la vôtre sur les 6 derniers mois : si vous ne notez presque jamais un symptôme, un 1 compte déjà comme un signal ; si vous le notez souvent à 3, il faudra s'écarter davantage pour déclencher une alerte. Pour l'humeur, l'énergie et le sommeil, l'ajustement peut seulement rendre Bip plus attentif, jamais moins : une longue phase basse ou haute ne peut pas devenir « la normale ».</p>
       <label class="check"><input type="checkbox" id="s-calibrate"> Ajuster les calculs à ma façon de noter</label>
       <div id="cal-detail"></div>
     </div>
