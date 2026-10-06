@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'none'; connect-src 'none'; base-uri 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Alcyon – Méthode en bref</title>
+<meta name="description" content="Résumé de la méthode d'Alcyon : ce que fait l'app, comment elle calcule, sur quoi elle s'appuie et ce qui reste à valider.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f3f0; --surface: #fcfcfb; --border: #e3e2dd; --grid: #ecebe7;
+  --text: #0b0b0b; --text-2: #52514e; --muted: #73726c;
+  --lit: #0a7d0a; --lit-bg: #e5f4e3;
+  --adapt: #2a78d6; --adapt-bg: #e6effb;
+  --choice: #9a5b00; --choice-bg: #fff3dc;
+  --accent: #0f4c5c;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #111110; --surface: #1a1a19; --border: #2e2e2c; --grid: #262624;
+    --text: #ffffff; --text-2: #c3c2b7; --muted: #9a998f;
+    --lit: #4cc24c; --lit-bg: #1c2f1b; --adapt: #5b9cec; --adapt-bg: #1d2a3b;
+    --choice: #f0b04a; --choice-bg: #3a2f14; --accent: #7fc4d4;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111110; --surface: #1a1a19; --border: #2e2e2c; --grid: #262624;
+  --text: #ffffff; --text-2: #c3c2b7; --muted: #9a998f;
+  --lit: #4cc24c; --lit-bg: #1c2f1b; --adapt: #5b9cec; --adapt-bg: #1d2a3b;
+  --choice: #f0b04a; --choice-bg: #3a2f14; --accent: #7fc4d4;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 820px; margin: 0 auto; padding: 24px 16px 64px; }
+header.doc { padding: 8px 0 16px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+header.doc .kicker { color: var(--accent); font-weight: 600; font-size: 14px; letter-spacing: .02em; }
+h1 { font-size: 28px; line-height: 1.2; margin: 4px 0 8px; letter-spacing: -0.02em; }
+h2 { font-size: 21px; margin: 40px 0 8px; letter-spacing: -0.01em; scroll-margin-top: 16px; }
+h3 { font-size: 16px; margin: 22px 0 6px; }
+p { margin: 8px 0; }
+.lede { color: var(--text-2); font-size: 17px; }
+.muted { color: var(--muted); }
+.small { font-size: 14px; }
+a { color: var(--accent); }
+code, .f { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
+.f { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin: 10px 0; white-space: pre; overflow-x: auto; font-size: 13px; line-height: 1.55; }
+@media print { .f { white-space: pre-wrap; } }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; margin: 12px 0; }
+.tag { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 99px; padding: 1px 8px; margin: 0 2px; white-space: nowrap; vertical-align: 1px; }
+.tag.lit { color: var(--lit); background: var(--lit-bg); }
+.tag.adapt { color: var(--adapt); background: var(--adapt-bg); }
+.tag.choice { color: var(--choice); background: var(--choice-bg); }
+.legend-tags { display: grid; gap: 6px; font-size: 14px; }
+.toc ol { margin: 6px 0; padding-left: 22px; columns: 2; column-gap: 32px; font-size: 15px; }
+@media (max-width: 560px) { .toc ol { columns: 1; } }
+.table-wrap { overflow-x: auto; margin: 10px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 8px; border-bottom: 1px solid var(--grid); }
+thead th { color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); }
+tbody th { font-weight: 600; }
+td .tag { margin-top: 2px; }
+ul, ol { padding-left: 22px; }
+li { margin: 4px 0; }
+.q { counter-reset: q; list-style: none; padding: 0; }
+.q li { counter-increment: q; position: relative; padding: 10px 12px 10px 44px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin: 8px 0; }
+.q li::before { content: counter(q); position: absolute; left: 12px; top: 10px; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--surface); font-size: 13px; font-weight: 700; text-align: center; line-height: 22px; }
+.refs li { margin: 8px 0; font-size: 15px; }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 12px 0; padding: 0; list-style: none; counter-reset: st; }
+.steps li { counter-increment: st; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin: 0; font-size: 14px; }
+.steps li::before { content: counter(st); display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--surface); font-weight: 700; font-size: 13px; text-align: center; line-height: 22px; margin-right: 6px; }
+.steps b { font-size: 15px; }
+.shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 18px; margin: 14px 0; align-items: start; }
+.shots.wide { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+figure { margin: 0; }
+figure img { display: block; width: 100%; height: auto; border-radius: 14px; border: 1px solid var(--border); box-shadow: 0 6px 20px rgba(0,0,0,.08); background: #fcfcfb; }
+figure.tall img { max-height: 620px; object-fit: cover; object-position: top; }
+figcaption { font-size: 13.5px; color: var(--text-2); margin-top: 8px; line-height: 1.45; }
+figcaption b { color: var(--text); }
+.note-demo { font-size: 13px; color: var(--muted); }
+footer { margin-top: 48px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+.back { font-size: 14px; }
+@media print {
+  :root, html:root:not([data-print]) { color-scheme: light; --bg: #fff; --surface: #fff; --text: #000; --text-2: #333; --muted: #555; --border: #ccc; --grid: #ddd; --accent: #0f4c5c;
+    --lit: #0a7d0a; --lit-bg: #e5f4e3; --adapt: #2a78d6; --adapt-bg: #e6effb; --choice: #9a5b00; --choice-bg: #fff3dc; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-size: 11pt; }
+  main { max-width: none; padding: 0; }
+  .back { display: none; }
+  h2 { break-after: avoid; }
+  .card, tr, .q li, figure, .steps li { break-inside: avoid; }
+  .steps { grid-template-columns: repeat(4, 1fr); }
+  .shots { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .shots.wide { grid-template-columns: repeat(2, 1fr); }
+  figure img { box-shadow: none; }
+  figure.tall img { max-height: 120mm; }
+  a { color: inherit; text-decoration: none; }
+  .refs a::after { content: " — " attr(href); font-size: 9pt; color: #555; word-break: break-all; }
+  @page { margin: 16mm; }
+}
+</style>
+<style>
+.hero-cta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 4px; }
+.btn-full { display: inline-block; background: var(--accent); color: var(--surface); text-decoration: none; font-weight: 600; font-size: 15px; padding: 10px 14px; border-radius: 10px; }
+.key { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 10px 0; }
+.key div { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; font-size: 14px; }
+.key b { display: block; font-size: 15px; margin-bottom: 2px; }
+.more { font-size: 13.5px; }
+.shots.three { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+ul.tight li { margin: 3px 0; }
+@media print {
+  .key { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .key div { padding: 8px 10px; font-size: 12.5px; }
+  .shots.three { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .shots.three img { max-height: 62mm !important; object-fit: cover; object-position: top; }
+  .btn-full { color: #fff; }
+  .print-url { display: block !important; }
+}
+.print-url { display: none; font-size: 12px; color: var(--muted); word-break: break-all; }
+</style>
+</head>
+<body>
+<main>
+<p class="back"><a href="./">← Retour à l'app</a></p>
+
+<header class="doc">
+  <div class="kicker">ALCYON · LA MÉTHODE EN BREF</div>
+  <h1>Alcyon, la méthode en bref</h1>
+  <p class="lede">Une application de suivi de l'humeur pour le trouble bipolaire, surtout de type II. Ce résumé se lit en quelques minutes ; chaque point renvoie au <a href="https://hugohismans.github.io/Bip/methodologie.html">document complet</a> (formules exactes, seuils, sources, questions pour la relecture).</p>
+  <div class="hero-cta"><a class="btn-full" href="https://hugohismans.github.io/Bip/methodologie.html">Lire la version complète →</a> <span class="small muted">Version du 6 octobre 2026.</span></div>
+  <span class="print-url">Version complète : https://hugohismans.github.io/Bip/methodologie.html</span>
+</header>
+
+<h2 style="margin-top:24px">Ce que fait l'application</h2>
+<div class="key">
+  <div><b>1 · Noter en 5 à 10 s</b>Une à trois fois par jour : humeur et énergie (−3 à +3), heures de sommeil, 2-3 symptômes (0 à 3), signes personnels à cocher.</div>
+  <div><b>2 · Voir la tendance</b>Phase sur 7 jours (haute, basse, stable) et direction (montée, descente), graphes sur 30 jours à 1 an.</div>
+  <div><b>3 · Être prévenu</b>Alertes quand un schéma connu apparaît, avec le plan d'action du patient et les numéros du psychiatre et d'un proche.</div>
+  <div><b>4 · En parler</b>Récapitulatif imprimable de la période depuis la dernière consultation.</div>
+  <div><b>5 · Suivre le traitement</b>Changements datés, marqués sur le graphe, avec comparaison descriptive avant / après.</div>
+  <div><b>6 · Rester privé</b>Tout reste sur le téléphone : pas de compte, pas de serveur, aucune requête réseau possible.</div>
+</div>
+
+<div class="shots three">
+  <figure><img src="docs/01-saisie.jpg" alt="Écran de saisie" width="1074" height="3636" loading="lazy" style="max-height:440px;object-fit:cover;object-position:top">
+    <figcaption><b>La saisie</b> du soir (ou matin / après-midi / soir).</figcaption></figure>
+  <figure><img src="docs/04-annee.jpg" alt="Graphe sur un an" width="1074" height="1284" loading="lazy">
+    <figcaption><b>Un an d'historique</b> (données fictives) : zones haute et basse, moyenne 7 jours, 💊 changements de traitement.</figcaption></figure>
+  <figure><img src="docs/03-que-faire.jpg" alt="Carte Que faire" width="1074" height="786" loading="lazy">
+    <figcaption><b>« Que faire »</b> : le plan d'action écrit avec le psychiatre, affiché avec les alertes.</figcaption></figure>
+</div>
+<p class="more"><a href="https://hugohismans.github.io/Bip/methodologie.html#bref">Visite guidée complète en 10 captures →</a></p>
+
+<h2>Comment elle calcule</h2>
+<ul class="tight">
+  <li><b>Indice du jour</b> (−3 à +3) = 50 % humeur + 30 % énergie + 20 % écart de sommeil (1 h de moins que d'habitude = +1). <a class="more" href="https://hugohismans.github.io/Bip/methodologie.html#indice">§ 3</a></li>
+  <li><b>Zones</b> : haute si indice ≥ +1, basse si ≤ −1. <b>Phase</b> = moyenne des 7 derniers jours ; <b>direction</b> = pente sur 7 jours. <a class="more" href="https://hugohismans.github.io/Bip/methodologie.html#phase">§ 5</a></li>
+  <li><b>Plusieurs relevés par jour</b> : moyenne pour l'humeur et l'énergie, maximum pour les symptômes ; l'écart dans la journée est mesuré. <a class="more" href="https://hugohismans.github.io/Bip/methodologie.html#multi">§ 4</a></li>
+  <li><b>Étalonnage personnel</b> : après 21 relevés, un symptôme rarement noté compte dès 1, un symptôme souvent noté haut doit s'écarter davantage. Pour l'humeur, l'énergie et le sommeil, l'ajustement ne peut que rendre l'app <i>plus</i> attentive, pour qu'un épisode long ne devienne jamais « la normale ». <a class="more" href="https://hugohismans.github.io/Bip/methodologie.html#etalonnage">§ 7</a></li>
+</ul>
+
+<h2>Les principales alertes</h2>
+<ul class="tight">
+  <li><b>4 jours d'affilée en zone haute</b> : durée d'un épisode hypomaniaque (DSM-5). Vigilance dès 2 jours.</li>
+  <li><b>Sommeil réduit sans fatigue</b> : ≥ 2 nuits sur 3 avec 2 h de moins et énergie haute, le prodrome le plus cité de l'hypomanie.</li>
+  <li><b>Pensées qui accélèrent / impulsivité</b>, <b>signes mixtes</b> (humeur basse + agitation), <b>humeur très changeante dans la journée</b>.</li>
+  <li><b>Zone basse</b> : vigilance à 3 jours, psychiatre à 7 jours, alerte à 14 jours (durée d'un épisode dépressif, DSM-5).</li>
+  <li><b>Signes personnels</b> répétés, <b>oublis de traitement</b>, <b>changement brutal</b>. Si l'humeur est à −3 ou en cas de signes mixtes : lignes d'écoute (3114, 0800 32 123, 143, 988, 112).</li>
+</ul>
+<p class="more"><a href="https://hugohismans.github.io/Bip/methodologie.html#alertes">Conditions exactes de chaque alerte →</a></p>
+
+<h2>Sur quoi elle s'appuie</h2>
+<div class="card small">
+  <p style="margin-top:0"><span class="tag lit">Littérature</span> Durées des épisodes et caractéristiques mixtes (DSM-5) ; life chart quotidien (NIMH-LCM, Denicoff 2000) ; auto-évaluation sur smartphone (MONARCA, Faurholt-Jepsen 2015) ; items de l'échelle d'Altman ; sommeil comme prodrome majeur (Jackson 2003, Andrade-González 2020, Bauer 2006) ; repérage des signes de rechute personnels (Perry 1999, Cochrane 2007) ; instabilité de l'humeur (Broome 2015).</p>
+  <p style="margin-bottom:0"><span class="tag choice">Choix à valider</span> Les pondérations de l'indice, les seuils des zones et de plusieurs alertes, la règle des nuits courtes, l'étalonnage personnel et la comparaison avant / après traitement sont des choix raisonnés, <b>sans validation propre</b>.</p>
+</div>
+<p class="more"><a href="https://hugohismans.github.io/Bip/methodologie.html#refs">Les 14 références, avec liens →</a></p>
+
+<h2>Limites à garder en tête</h2>
+<ul class="tight">
+  <li>Pas d'étude de validation d'Alcyon lui-même : ni sensibilité ni spécificité des alertes.</li>
+  <li>Auto-évaluation : en hypomanie, l'insight diminue ; d'où le poids donné au sommeil, à l'énergie et aux signes concrets.</li>
+  <li>Dans MONARCA I, l'auto-surveillance seule n'a pas réduit les symptômes dépressifs : l'outil doit s'inscrire dans un suivi.</li>
+  <li>Pas de question directe sur les idées suicidaires (à discuter).</li>
+</ul>
+<p class="more"><a href="https://hugohismans.github.io/Bip/methodologie.html#limites">Toutes les limites →</a></p>
+
+<h2>Cinq questions pour un·e psychiatre</h2>
+<ol class="q">
+  <li>Les pondérations de l'indice (50 / 30 / 20) et les zones à ±1 vous paraissent-elles adaptées au type II ?</li>
+  <li>Les paliers d'alerte (2 puis 4 jours en zone haute ; 3, 7 puis 14 jours en zone basse) sont-ils au bon niveau ?</li>
+  <li>Le seuil de « nuit courte » (2 h sous l'habituel) est-il pertinent pour une alerte précoce ?</li>
+  <li>Faut-il ajouter une question sur les idées suicidaires, et avec quelle conduite à tenir ?</li>
+  <li>L'étalonnage personnel vous semble-t-il acceptable, avec ses garde-fous ?</li>
+</ol>
+<p class="more"><a href="https://hugohismans.github.io/Bip/methodologie.html#questions">Les 11 questions détaillées →</a></p>
+
+<div class="hero-cta" style="margin-top:28px"><a class="btn-full" href="https://hugohismans.github.io/Bip/methodologie.html">Lire la version complète →</a></div>
+
+<footer>
+  <p>Alcyon est un projet personnel, sans affiliation institutionnelle ; ce résumé ne constitue pas un avis médical. Captures réalisées avec des données entièrement fictives.</p>
+  <p>Version complète : <a href="https://hugohismans.github.io/Bip/methodologie.html">hugohismans.github.io/Bip/methodologie.html</a></p>
+</footer>
+</main>
+</body>
+</html>

@@ -1,7 +1,7 @@
 // Alcyon fonctionne hors ligne : tous les fichiers de l'app sont mis en cache.
 // Aucune donnée personnelle ne passe par ici (elles restent dans localStorage).
-const CACHE = 'alcyon-v8';
-const FILES = ['./', 'index.html', 'methodologie.html', 'style.css', 'app.js', 'icon.svg', 'manifest.webmanifest',
+const CACHE = 'alcyon-v9';
+const FILES = ['./', 'index.html', 'methodologie.html', 'methodologie-resume.html', 'style.css', 'app.js', 'icon.svg', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
