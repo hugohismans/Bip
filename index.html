@@ -169,6 +169,14 @@
       </div>
       <div id="s-slot-times" class="slot-times"></div>
       <label class="check"><input type="checkbox" id="s-remind"> M'envoyer une notification à ces heures</label>
+      <div id="ios-remind" class="ios-remind" hidden>
+        <p class="small"><b>Sur iPhone, ces notifications ne partent pas si l'app est fermée</b> : iOS met les apps web en pause dès qu'on les quitte. Pour un rappel fiable, créez-le dans l'app <b>Rappels</b> :</p>
+        <ol class="small">
+          <li>Rappels → <b>Nouveau rappel</b> : « Noter mon humeur dans Alcyon ».</li>
+          <li>Touchez <b>ⓘ</b>, activez <b>Date</b> et <b>Heure</b>, choisissez l'heure ci-dessus.</li>
+          <li><b>Répéter</b> → <b>Tous les jours</b>, puis <b>OK</b>. Un rappel par moment si vous notez plusieurs fois par jour.</li>
+        </ol>
+      </div>
       <p class="muted small" style="margin:0">Les notifications partent si vous n'avez pas encore noté ce moment-là. Sans serveur (vos données ne quittent pas le téléphone), elles ne fonctionnent que si l'app est ouverte ou encore en arrière-plan : iOS la met vite en veille.</p>
       <button type="submit" class="primary">Enregistrer les réglages</button>
       <p id="s-toast" class="toast" role="status" aria-live="polite"></p>

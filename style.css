@@ -347,3 +347,6 @@ table.impact tbody th { font-weight: 500; color: var(--text-2); white-space: nor
 .sign-pole.mid { color: var(--mid); background: var(--mid-zone); }
 .sign-chip.mid .pole { color: var(--mid); }
 .stable-note { margin: 8px 0 0; color: var(--mid); }
+.ios-remind { margin: 8px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.ios-remind p { margin: 0 0 4px; }
+.ios-remind ol { margin: 4px 0 0; padding-left: 20px; }

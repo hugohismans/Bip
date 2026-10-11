@@ -1692,6 +1692,7 @@ if (DEMO) {
 }
 renderSymptomInputs();
 renderSignInputs();
+$('#ios-remind').hidden = !isIOS;
 if (!DEMO) renderInstall();
 askPersist();
 fillSettings();
