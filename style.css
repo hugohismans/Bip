@@ -350,3 +350,17 @@ table.impact tbody th { font-weight: 500; color: var(--text-2); white-space: nor
 .ios-remind { margin: 8px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
 .ios-remind p { margin: 0 0 4px; }
 .ios-remind ol { margin: 4px 0 0; padding-left: 20px; }
+
+/* Curseurs personnalisés */
+.sym-opt-row { display: flex; align-items: flex-start; gap: 6px; border-bottom: 1px solid var(--grid); }
+.sym-opt-row .sym-opt { flex: 1; border-bottom: 0; }
+.sym-opt-row .x { margin-top: 4px; }
+.custom-add { margin: 4px 0 6px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 10px; }
+#settings .custom-add input[type=text] { display: block; width: 100%; margin: 0 0 6px; }
+.custom-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.custom-row select { flex: 1 1 200px; font: inherit; font-size: 14px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px; }
+.custom-add button[disabled] { opacity: .5; cursor: not-allowed; }
+
+/* Encart de crise : contacts en boutons */
+.crisis .act { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.crisis .act a { font-size: 14px; font-weight: 600; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; text-decoration: none; }

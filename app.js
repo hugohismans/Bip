@@ -11,8 +11,9 @@ const KEY_SETTINGS = 'bip.settings.v1';
 const LEVELS = ['non', 'un peu', 'nettement', 'beaucoup'];
 
 /* Symptômes notés de 0 à 3. Humeur, énergie et sommeil sont toujours présents.
-   'def' : activé par défaut (choix pensé pour le type 2). */
-const SYMPTOMS = [
+   'def' : activé par défaut (choix pensé pour le type 2) ; 'rec' : conseillé sans être imposé ;
+   'nocal' : jamais ajusté par l'étalonnage personnel (un signal qui doit toujours compter). */
+const BUILTIN_SYMPTOMS = [
   { key: 'irrit', short: 'Irr.', label: 'Irritabilité', hint: 'agacement, impatience, colère', def: true },
   { key: 'anxiety', short: 'Anx.', label: 'Anxiété', hint: 'inquiétude, tension, nervosité', def: true },
   { key: 'thoughts', short: 'Pens.', label: 'Pensées rapides', hint: 'idées qui fusent, parler beaucoup, plein de projets', def: true },
@@ -20,8 +21,22 @@ const SYMPTOMS = [
   { key: 'focus', short: 'Conc.', label: 'Difficulté à se concentrer', hint: 'lire, suivre une conversation, travailler', def: false },
   { key: 'stress', short: 'Stress', label: 'Stress / événement', hint: 'conflit, deadline, deuil, voyage…', def: false },
   { key: 'alcohol', short: 'Alc.', label: 'Alcool / substances', hint: 'plus que d\'habitude', def: false },
+  { key: 'rumin', short: 'Rum.', label: 'Ruminations', hint: 'ressasser, tourner en boucle, culpabiliser', def: false },
+  { key: 'dark', short: 'Id. noires', label: 'Idées noires', hint: 'pensées de mort, envie de disparaître', def: false, rec: true, nocal: true },
 ];
-const SYM = Object.fromEntries(SYMPTOMS.map(x => [x.key, x]));
+/* Curseurs personnalisés : { key: 'c_…', label, hint, pole: 'high'|'low'|'both', archived } ;
+   un curseur supprimé est archivé pour que l'historique reste lisible. */
+const MAX_CUSTOM = 6;
+let SYMPTOMS = BUILTIN_SYMPTOMS.slice();
+let SYM = Object.fromEntries(SYMPTOMS.map(x => [x.key, x]));
+function rebuildSymptoms() {
+  const custom = (settings.customSymptoms || []).map(c => Object.assign({}, c, {
+    custom: true, short: c.label.length > 7 ? c.label.slice(0, 6) + '.' : c.label, def: false,
+  }));
+  SYMPTOMS = BUILTIN_SYMPTOMS.concat(custom);
+  SYM = Object.fromEntries(SYMPTOMS.map(x => [x.key, x]));
+}
+const activeCustom = () => (settings.customSymptoms || []).filter(c => !c.archived);
 const sv = (e, k) => e[k] || 0;
 const lvl = v => LEVELS[clamp(Math.round(v), 0, 3)];
 function symLabel(k, v) { return `${SYM[k].label.toLowerCase()} ${lvl(v)}`; }
@@ -49,7 +64,8 @@ const DEFAULT_SETTINGS = {
   remind: false, remindTime: '21:00',
   slotCount: 1,              // relevés par jour (1, 2 ou 3)
   slotTimes: {},             // heures de rappel personnalisées, clé « <nombre><id> » (ex. « 3m »)
-  symptoms: SYMPTOMS.filter(x => x.def).map(x => x.key),
+  symptoms: BUILTIN_SYMPTOMS.filter(x => x.def).map(x => x.key),
+  customSymptoms: [],
   calibrate: true,           // ajuster les calculs à la façon de noter du patient
   signs: [],                 // signes d'alerte personnels { id, text, pole: 'high'|'low', archived? }
   planHigh: '', planLow: '', // plan d'action écrit avec le psychiatre
@@ -102,9 +118,16 @@ function save(key, value) {
 
 let entries = load(KEY_ENTRIES, {});
 let settings = normSettings(load(KEY_SETTINGS, {}));
+rebuildSymptoms();
 function normSettings(o) {
   const st = Object.assign({}, DEFAULT_SETTINGS, o);
-  st.symptoms = Array.isArray(st.symptoms) ? st.symptoms.filter(k => SYM[k]) : DEFAULT_SETTINGS.symptoms.slice();
+  const txt = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
+  st.customSymptoms = (Array.isArray(st.customSymptoms) ? st.customSymptoms : [])
+    .filter(c => c && /^c_[a-z0-9]{2,30}$/.test(c.key) && txt(c.label, 40))
+    .map(c => ({ key: c.key, label: txt(c.label, 40), hint: txt(c.hint, 80), pole: ['high', 'low', 'both'].includes(c.pole) ? c.pole : 'both', archived: !!c.archived }))
+    .slice(0, 30);
+  const known = new Set(BUILTIN_SYMPTOMS.map(x => x.key).concat(st.customSymptoms.filter(c => !c.archived).map(c => c.key)));
+  st.symptoms = Array.isArray(st.symptoms) ? st.symptoms.filter(k => known.has(k)) : DEFAULT_SETTINGS.symptoms.slice();
   st.calibrate = st.calibrate !== false;
   st.slotCount = [1, 2, 3].includes(+st.slotCount) ? +st.slotCount : 1;
   const times = {};
@@ -199,6 +222,7 @@ function calibration() {
     const sl = list.map(e => e.sleep);
     c.dims.sleep = { center: settings.baseline, scale: clamp(spread(sl, median(sl)), 0.75, 1) };
     for (const x of SYMPTOMS) {
+      if (x.nocal) continue;
       const v = list.filter(e => e[x.key] !== undefined).map(e => e[x.key]);
       if (v.length < CAL_MIN) continue;
       const med = median(v);
@@ -373,6 +397,22 @@ function analyze() {
         text: `${irritDays} jours sur les 7 derniers avec une irritabilité inhabituelle pour vous. Elle peut accompagner une phase haute comme une phase basse : notez-le pour votre prochain rendez-vous.`,
         who: [] });
     }
+    const ruminDays = recent7.filter(e => symHigh(e, 'rumin')).length;
+    if (ruminDays >= 4) {
+      alerts.push({ level: 'warn', pole: 'low', title: 'Ruminations fréquentes',
+        text: `${ruminDays} jours sur les 7 derniers à ressasser plus que d'habitude. Les ruminations accompagnent souvent une phase basse : notez ce qui revient en boucle et parlez-en à votre psychiatre.`,
+        who: ['psy'] });
+    }
+    // Curseurs personnalisés : vigilance s'ils sont inhabituels 3 jours sur 7
+    for (const c of activeCustom()) {
+      if (!settings.symptoms.includes(c.key)) continue;
+      const n = recent7.filter(e => symHigh(e, c.key)).length;
+      if (n >= 3) {
+        alerts.push({ level: 'warn', pole: c.pole === 'both' ? 'mixed' : c.pole, title: `${c.label} : plus présent que d'habitude`,
+          text: `${n} jours sur les 7 derniers au-dessus de votre habitude. C'est un curseur que vous avez choisi de suivre : ${c.pole === 'high' ? 'il peut annoncer une phase haute' : c.pole === 'low' ? 'il peut annoncer une phase basse' : 'à surveiller et à évoquer en consultation'}.`,
+          who: [] });
+      }
+    }
     const anxDays = recent7.filter(e => symHigh(e, 'anxiety')).length;
     if (anxDays >= 4 && !mixedDays.length) {
       alerts.push({ level: 'warn', title: 'Anxiété persistante',
@@ -418,7 +458,19 @@ function analyze() {
 
   const lastE = entries[last];
   const lowest = lastE.slots ? Math.min(...Object.values(lastE.slots).map(r => r.mood)) : lastE.mood;
-  const crisis = stale <= 1 && (lowest <= -3 || alerts.some(a => a.title === 'Signes mixtes'));
+  // Idées noires : jamais étalonnées ; message doux à 1, encart de crise dès 2 (ou avec des signes mixtes)
+  const dark = stale <= 1 ? Math.max(sv(lastE, 'dark'), ...lastNDays(last, 2).map(e => sv(e, 'dark'))) : 0;
+  const mixedNow = alerts.some(a => a.title === 'Signes mixtes');
+  if (dark >= 2 || (dark >= 1 && mixedNow)) {
+    alerts.unshift({ level: 'crit', pole: 'low', title: 'Idées noires',
+      text: 'Vous avez noté des idées noires. Vous n\'avez pas à les porter seul·e : parlez-en dès maintenant à quelqu\'un, votre psychiatre, un proche de confiance ou une ligne d\'écoute. Si vous vous sentez en danger, appelez le 112.',
+      who: ['psy', 'fam'] });
+  } else if (dark >= 1) {
+    alerts.unshift({ level: 'warn', pole: 'low', title: 'Quelques idées noires',
+      text: 'Vous avez noté quelques idées noires. Ça arrive, et le fait de les noter est déjà une bonne chose. C\'est important d\'en parler : à votre psychiatre, à un proche, ou à une ligne d\'écoute si c\'est plus simple (3114 en France, 0800 32 123 en Belgique, 24 h/24). Si elles deviennent plus présentes, n\'attendez pas.',
+      who: ['psy', 'fam'] });
+  }
+  const crisis = stale <= 1 && (lowest <= -3 || mixedNow || dark >= 2);
   const stable = stale <= 2 ? signStats(lastNDays(last, 3), 'mid').distinct : new Set();
   return { last, stale, avg, n7: w7.n, slope, stable, phase: phaseOf(avg), dir: directionOf(slope), alerts, crisis };
 }
@@ -1243,10 +1295,49 @@ function fillSettings() {
   S.remind.checked = settings.remind;
   renderSlotSettings(settings.slotCount);
   renderCalCard(); renderSignsCard(); renderTreatCard();
-  $('#s-symptoms').innerHTML = SYMPTOMS.map(x => `
-    <label class="check sym-opt"><input type="checkbox" value="${x.key}" ${settings.symptoms.includes(x.key) ? 'checked' : ''}>
-      <span><b>${esc(x.label)}</b>${x.def ? ' <span class="pill">conseillé</span>' : ''}<br><span class="muted">${esc(x.hint)}</span></span></label>`).join('');
+  renderSymptomSettings();
 }
+const POLE_TXT = { high: '↑ phase haute', low: '↓ phase basse', both: '↕ les deux' };
+function renderSymptomSettings() {
+  $('#s-symptoms').innerHTML = SYMPTOMS.filter(x => !x.archived).map(x => `
+    <div class="sym-opt-row"><label class="check sym-opt"><input type="checkbox" value="${x.key}" ${settings.symptoms.includes(x.key) ? 'checked' : ''}>
+      <span><b>${esc(x.label)}</b>${x.def || x.rec ? ' <span class="pill">conseillé</span>' : ''}${x.custom ? ` <span class="pill">perso · ${POLE_TXT[x.pole]}</span>` : ''}<br><span class="muted">${esc(x.hint || '')}</span></span></label>
+      ${x.custom ? `<button type="button" class="x" data-del-custom="${x.key}" aria-label="Supprimer ce curseur">✕</button>` : ''}</div>`).join('');
+  const full = activeCustom().length >= MAX_CUSTOM;
+  $('#c-add').disabled = full;
+  $('#c-label').placeholder = full ? 'Maximum atteint (6 curseurs)' : 'Nom (ex. Envie de sortir, Douleurs…)';
+}
+/* garde les cases cochées (pas encore enregistrées) quand on ajoute / retire un curseur */
+function keepChecked() { settings.symptoms = $$('#s-symptoms input:checked').map(i => i.value); }
+function afterCustomChange(msg) {
+  saveSettings(); renderSymptomSettings(); renderSymptomInputs(); fillForm(F.date.value || today()); renderCalCard();
+  flash('#c-toast', msg);
+}
+function addCustom() {
+  const label = $('#c-label').value.trim().slice(0, 40);
+  if (!label) { flash('#c-toast', 'Donnez un nom au curseur.'); $('#c-label').focus(); return; }
+  if (activeCustom().length >= MAX_CUSTOM) return;
+  keepChecked();
+  const same = settings.customSymptoms.find(c => c.label.toLowerCase() === label.toLowerCase());
+  const hint = $('#c-hint').value.trim().slice(0, 80), pole = $('#c-pole').value;
+  let key;
+  if (same) { Object.assign(same, { archived: false, hint: hint || same.hint, pole }); key = same.key; }
+  else { key = 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); settings.customSymptoms.push({ key, label, hint, pole, archived: false }); }
+  if (!settings.symptoms.includes(key)) settings.symptoms.push(key);
+  $('#c-label').value = ''; $('#c-hint').value = ''; $('#c-pole').value = 'both';
+  afterCustomChange(`« ${label} » ajouté ✓ Il apparaît sur la saisie.`);
+}
+$('#c-add').addEventListener('click', addCustom);
+['#c-label', '#c-hint'].forEach(id => $(id).addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); addCustom(); } }));
+$('#s-symptoms').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-del-custom]'); if (!b) return;
+  const c = settings.customSymptoms.find(x => x.key === b.dataset.delCustom);
+  if (!c || !confirm(`Retirer le curseur « ${c.label} » ? Les valeurs déjà notées restent dans l'historique.`)) return;
+  keepChecked();
+  c.archived = true;
+  settings.symptoms = settings.symptoms.filter(k => k !== c.key);
+  afterCustomChange(`« ${c.label} » retiré.`);
+});
 function renderSlotSettings(count) {
   $$('[data-slotcount]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.slotcount === count)));
   $('#s-slot-times').innerHTML = SLOT_SETS[count].map(x => `
@@ -1258,10 +1349,10 @@ $('#s-slot-count').addEventListener('click', ev => {
 });
 
 function refreshAll() {
-  resetCalibration();
+  rebuildSymptoms(); resetCalibration();
   fillSettings(); renderSymptomInputs(); renderSignInputs(); fillForm(F.date.value || today()); renderStatus();
 }
-function saveSettings() { save(KEY_SETTINGS, settings); resetCalibration(); }
+function saveSettings() { save(KEY_SETTINGS, settings); rebuildSymptoms(); resetCalibration(); }
 
 /* ---------- réglages : ma façon de noter (étalonnage) ---------- */
 function renderCalCard() {
@@ -1281,6 +1372,7 @@ function renderCalCard() {
     ['Sommeil', ds.scale < 1 ? 'nuits très régulières' : 'nuits variables', `1 h de moins compte pour ${f(1 / ds.scale)} ; nuit « courte » à partir de −${fmtH(Math.max(1.5, Math.ceil(2 * ds.scale * 2) / 2))}`],
   ];
   for (const x of SYMPTOMS) {
+    if (x.nocal && settings.symptoms.includes(x.key)) { rows.push([x.label, 'jamais ajusté', 'un 1 compte toujours, quelle que soit votre façon de noter']); continue; }
     const d = c.dims[x.key]; if (!d) continue;
     const thr = symThreshold(x.key);
     rows.push([x.label, `en moyenne ${d.mean.toFixed(1).replace('.', ',')} / 3`,
@@ -1393,7 +1485,7 @@ $('#d-export').addEventListener('click', exportBackup);
 document.addEventListener('click', ev => { if (ev.target.closest('[data-backup]')) exportBackup(); });
 
 $('#d-csv').addEventListener('click', () => {
-  const rows = [['date', 'humeur', 'energie', 'sommeil_h', ...SYMPTOMS.map(x => x.key), 'signes_haute', 'signes_basse', 'signes_stable', 'traitement_pris', 'traitement', 'indice', 'moyenne_7j', 'note']];
+  const rows = [['date', 'humeur', 'energie', 'sommeil_h', ...SYMPTOMS.map(x => (x.custom ? 'perso : ' + x.label : x.key)), 'signes_haute', 'signes_basse', 'signes_stable', 'traitement_pris', 'traitement', 'indice', 'moyenne_7j', 'note']];
   for (const d of Object.keys(entries).sort()) {
     const e = entries[d], w = avgWindow(d, 7);
     rows.push([d, e.mood, e.energy, e.sleep, ...SYMPTOMS.map(x => e[x.key] === undefined ? '' : e[x.key]),
@@ -1410,7 +1502,7 @@ function cleanRecord(e) {
   const mood = num(e.mood), energy = num(e.energy);
   if (isNaN(mood) || isNaN(energy)) return null;
   const out = { mood: clamp(round1(mood), -3, 3), energy: clamp(round1(energy), -3, 3) };
-  for (const x of SYMPTOMS) if (!isNaN(num(e[x.key]))) out[x.key] = clamp(round1(e[x.key]), 0, 3);
+  for (const k of Object.keys(e)) if ((SYM[k] || /^c_[a-z0-9]{2,30}$/.test(k)) && !isNaN(num(e[k]))) out[k] = clamp(round1(e[k]), 0, 3);
   if (Array.isArray(e.signs)) {
     const signs = e.signs.filter(id => typeof id === 'string').map(id => id.slice(0, 40)).slice(0, 30);
     if (signs.length) out.signs = signs;
@@ -1480,11 +1572,13 @@ $('#d-import-panel').addEventListener('click', ev => {
       Object.assign(entries, pendingImport.entries);
       // garder le texte des signes personnels référencés par les relevés importés
       if (pendingImport.settings) {
-        for (const g of normSettings(pendingImport.settings).signs) if (!signById(g.id)) settings.signs.push(Object.assign({}, g, { archived: true }));
+        const imp = normSettings(pendingImport.settings);
+        for (const g of imp.signs) if (!signById(g.id)) settings.signs.push(Object.assign({}, g, { archived: true }));
+        for (const c of imp.customSymptoms) if (!settings.customSymptoms.some(x => x.key === c.key)) settings.customSymptoms.push(Object.assign({}, c, { archived: true }));
       }
     }
     save(KEY_ENTRIES, entries); save(KEY_SETTINGS, settings);
-    resetCalibration(); fillSettings(); renderSymptomInputs(); renderSignInputs(); fillForm(today()); renderStatus();
+    rebuildSymptoms(); resetCalibration(); fillSettings(); renderSymptomInputs(); renderSignInputs(); fillForm(today()); renderStatus();
     flash('#s-toast', `${n} relevé(s) importé(s) ✓`);
   }
   pendingImport = null; panel.hidden = true; panel.innerHTML = '';
@@ -1534,6 +1628,9 @@ function demoYear() {
       sleep: clamp(Math.round((7.5 + lvl.sleep + weekend + noise(1.4)) * 2) / 2, 2.5, 12),
       irrit: sym('irrit'), anxiety: sym('anxiety'), thoughts: sym('thoughts'), impuls: sym('impuls'),
       focus: sym('focus'), stress: sym('stress'),
+      rumin: clamp(Math.round(Math.max(0, -lvl.mood) * 1.1 + noise(0.8) - 0.2), 0, 3),
+      dark: lvl.mood < -1.7 && rnd() < 0.3 ? 1 : 0,
+      c_sortir: clamp(Math.round(Math.max(0, lvl.energy) * 0.9 + noise(0.8) - 0.1), 0, 3),
       note: NOTES[i] || '',
     };
     // signes personnels cochés quand l'épisode est bien là
@@ -1660,7 +1757,9 @@ async function askPersist() {
 
 /* ---------- démarrage ---------- */
 if (DEMO) {
-  settings.symptoms = ['irrit', 'anxiety', 'thoughts', 'impuls', 'focus', 'stress'];
+  settings.customSymptoms = [{ key: 'c_sortir', label: 'Envie de sortir', hint: 'voir du monde, faire la fête', pole: 'high', archived: false }];
+  settings.symptoms = ['irrit', 'anxiety', 'thoughts', 'impuls', 'rumin', 'dark', 'c_sortir'];
+  rebuildSymptoms();
   settings.slotCount = 3;
   settings.signs = [
     { id: 'dh1', text: 'Je fais plein de projets ou de listes', pole: 'high' },

@@ -151,6 +151,20 @@
       <h2>Mes curseurs</h2>
       <p class="muted small" style="margin:0 0 6px">Humeur, énergie et sommeil sont toujours là. Choisissez les autres avec votre psychiatre, idéalement ceux qu'elle ou il vous demande en consultation. Moins il y en a, plus c'est rapide.</p>
       <div id="s-symptoms" class="sym-list"></div>
+      <div class="custom-add" id="s-custom">
+        <p class="small" style="margin:10px 0 6px"><b>Ajouter un curseur personnalisé</b> <span class="muted">(noté de 0 à 3, jusqu'à 6 curseurs)</span></p>
+        <input type="text" id="c-label" maxlength="40" placeholder="Nom (ex. Envie de sortir, Douleurs…)" aria-label="Nom du curseur">
+        <input type="text" id="c-hint" maxlength="80" placeholder="Précision (facultatif)" aria-label="Précision">
+        <div class="custom-row">
+          <select id="c-pole" aria-label="Ce que ce curseur indique">
+            <option value="both">Indique : les deux / je ne sais pas</option>
+            <option value="high">↑ plutôt une phase haute</option>
+            <option value="low">↓ plutôt une phase basse</option>
+          </select>
+          <button type="button" id="c-add">Ajouter</button>
+        </div>
+        <p id="c-toast" class="toast" role="status" aria-live="polite"></p>
+      </div>
       <h2>Mes repères</h2>
       <label>Sommeil habituel (quand je vais bien)
         <span class="inline"><input type="number" id="s-baseline" min="4" max="12" step="0.5"> h</span>
