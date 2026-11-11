@@ -458,21 +458,28 @@ function analyze() {
 
   const lastE = entries[last];
   const lowest = lastE.slots ? Math.min(...Object.values(lastE.slots).map(r => r.mood)) : lastE.mood;
-  // Idées noires : jamais étalonnées ; message doux à 1, encart de crise dès 2 (ou avec des signes mixtes)
+  // Idées noires (jamais étalonnées), par paliers :
+  //   1 noté une seule fois       → simple phrase discrète sous la phase
+  //   1 au moins 2 jours sur 7    → carte « Quelques idées noires » (message doux + contacts)
+  //   2 ou plus, ou 1 + signes mixtes → alerte grave et encart de crise
   const dark = stale <= 1 ? Math.max(sv(lastE, 'dark'), ...lastNDays(last, 2).map(e => sv(e, 'dark'))) : 0;
+  const darkDays7 = stale <= 1 ? lastNDays(last, 7).filter(e => sv(e, 'dark') >= 1).length : 0;
   const mixedNow = alerts.some(a => a.title === 'Signes mixtes');
+  let darkNote = false;
   if (dark >= 2 || (dark >= 1 && mixedNow)) {
     alerts.unshift({ level: 'crit', pole: 'low', title: 'Idées noires',
       text: 'Vous avez noté des idées noires. Vous n\'avez pas à les porter seul·e : parlez-en dès maintenant à quelqu\'un, votre psychiatre, un proche de confiance ou une ligne d\'écoute. Si vous vous sentez en danger, appelez le 112.',
       who: ['psy', 'fam'] });
-  } else if (dark >= 1) {
+  } else if (darkDays7 >= 2) {
     alerts.unshift({ level: 'warn', pole: 'low', title: 'Quelques idées noires',
-      text: 'Vous avez noté quelques idées noires. Ça arrive, et le fait de les noter est déjà une bonne chose. C\'est important d\'en parler : à votre psychiatre, à un proche, ou à une ligne d\'écoute si c\'est plus simple (3114 en France, 0800 32 123 en Belgique, 24 h/24). Si elles deviennent plus présentes, n\'attendez pas.',
+      text: `Vous avez noté des idées noires ${darkDays7} jours sur les 7 derniers. Ça arrive, et le fait de les noter est déjà une bonne chose.`  + ' C\'est important d\'en parler : à votre psychiatre, à un proche, ou à une ligne d\'écoute si c\'est plus simple (3114 en France, 0800 32 123 en Belgique, 24 h/24). Si elles deviennent plus présentes, n\'attendez pas.',
       who: ['psy', 'fam'] });
+  } else if (dark >= 1) {
+    darkNote = true;
   }
   const crisis = stale <= 1 && (lowest <= -3 || mixedNow || dark >= 2);
   const stable = stale <= 2 ? signStats(lastNDays(last, 3), 'mid').distinct : new Set();
-  return { last, stale, avg, n7: w7.n, slope, stable, phase: phaseOf(avg), dir: directionOf(slope), alerts, crisis };
+  return { last, stale, avg, n7: w7.n, slope, stable, darkNote, phase: phaseOf(avg), dir: directionOf(slope), alerts, crisis };
 }
 
 /* ---------- UI : onglets ---------- */
@@ -697,7 +704,8 @@ function renderStatus() {
         <div class="value">${a.dir.label}</div><div class="sub">${a.dir.sub}</div></div>
     </div>
     <p class="muted small" style="margin:10px 0 0">Dernier relevé : ${staleTxt}.</p>
-    ${a.stable.size ? `<p class="small stable-note">= Signes de stabilité ces derniers jours : ${[...a.stable].map(esc).join(' · ')}</p>` : ''}`;
+    ${a.stable.size ? `<p class="small stable-note">= Signes de stabilité ces derniers jours : ${[...a.stable].map(esc).join(' · ')}</p>` : ''}
+    ${a.darkNote ? '<p class="small dark-note">Merci d\'avoir noté vos idées noires. Si elles reviennent, parlez-en à quelqu\'un de confiance.</p>' : ''}`;
 
   if (a.stale > 1) {
     alertsEl.innerHTML = `<div class="card alert"><h3>Quelques jours sans relevé</h3><p>Pas de saisie depuis ${a.stale} jours. Vous pouvez compléter les jours manqués en changeant la date en haut. Interrompre le suivi arrive souvent quand l'humeur change : ça vaut le coup de vous poser la question.</p></div>`;

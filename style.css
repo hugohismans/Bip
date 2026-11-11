@@ -364,3 +364,4 @@ table.impact tbody th { font-weight: 500; color: var(--text-2); white-space: nor
 /* Encart de crise : contacts en boutons */
 .crisis .act { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .crisis .act a { font-size: 14px; font-weight: 600; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; text-decoration: none; }
+.dark-note { margin: 8px 0 0; color: var(--text-2); }

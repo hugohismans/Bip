@@ -21,7 +21,7 @@ Les valeurs de la veille sont reprises, on ne touche que ce qui a changé.
 | Pensées rapides *(conseillé)* | 0 … 3 | signe le plus spécifique de l'hypomanie (type 2) |
 | Impulsivité, concentration, stress, alcool | 0 … 3 | optionnels, à activer dans *Réglages* |
 | Ruminations | 0 … 3 | optionnel ; signe de phase basse |
-| Idées noires *(conseillé)* | 0 … 3 | optionnel, jamais étalonné : message doux à 1, encart de crise dès 2 |
+| Idées noires *(conseillé)* | 0 … 3 | optionnel, jamais étalonné : phrase discrète à 1 isolé, message doux si répété (2 j / 7), encart de crise dès 2 |
 | Curseurs personnalisés | 0 … 3 | jusqu'à 6, créés dans *Réglages* (phase haute, basse ou les deux) |
 
 Le choix se fait dans *Réglages*, idéalement avec son psychiatre.
